@@ -71,3 +71,35 @@ Instruments in scope: FX Spot, FX Forward, FX Option.
 - Trade lifecycle is modelled as a separate append-only log rather than a single mutable `status` field, preserving full audit history of every state transition.
 - Owning both currency_pair and separate currency_1/currency_2 leads to some redundancy (e.g. currency_pair = EURUSD while currency_1 = EUR, currency_2 = USD separately), but this is meant to be a convenient display/lookup field and matches how real systems store the information.
 - For a single-currency-pair trade, one of notional_1/notional_2 is typically derivable from the other notional + the rate (e.g. notional_1 × rate = notional_2). Storing both avoids recalculation and matches how real systems often store both fields explicitly, despite the redundancy.
+
+## Entity-Relationship Diagram
+
+```mermaid
+erDiagram
+    TRADES ||--o{ TRADE_STATE : has
+
+    TRADES {
+        uuid trade_id PK
+        enum instrument_type
+        enum currency_pair
+        enum direction
+        enum currency_1
+        numeric notional_1
+        enum currency_2
+        numeric notional_2
+        date trade_date
+        string counterparty
+        enum status
+        text comment
+        jsonb instrument_details
+    }
+
+    TRADE_STATE {
+        serial state_id PK
+        uuid trade_id FK
+        enum state
+        timestamp changed_at
+        string changed_by
+        text notes
+    }
+```

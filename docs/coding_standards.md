@@ -42,11 +42,13 @@ chore: bump FastAPI version
 ```
 
 ### Branch naming
+```
 release-1-foundation
 release-2-trading
 release-3-nl-entry
 feature/nl-parse-endpoint
 fix/websocket-reconnect
+```
 
 ### Pull requests (if used, even solo)
 - One logical change per PR

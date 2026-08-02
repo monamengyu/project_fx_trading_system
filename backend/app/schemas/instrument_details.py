@@ -26,3 +26,15 @@ class OptionDetails(BaseModel):
 
 
 InstrumentDetails = Union[SpotDetails, ForwardDetails, OptionDetails]
+
+def validate_instrument_details(instrument_type: str, details: dict) -> BaseModel:
+    """Validate instrument_details against the correct shape for the given instrument_type."""
+    mapping = {
+        "SPOT": SpotDetails,
+        "FORWARD": ForwardDetails,
+        "OPTION": OptionDetails,
+    }
+    model_cls = mapping.get(instrument_type)
+    if model_cls is None:
+        raise ValueError(f"Unknown instrument_type: {instrument_type}")
+    return model_cls(**details)

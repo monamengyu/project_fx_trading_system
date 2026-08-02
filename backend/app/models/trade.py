@@ -2,7 +2,7 @@ import uuid
 from datetime import date
 from typing import Optional
 
-from sqlalchemy import String, Text, Numeric, Date, Enum as SAEnum
+from sqlalchemy import String, Text, Numeric, Date, Enum as SAEnum, CheckConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,6 +14,14 @@ from pydantic import BaseModel, field_validator
 
 class Trade(Base):
     __tablename__ = "trades"
+
+    # check if JSONB contain rate or strike_rate
+    __table_args__ = (
+        CheckConstraint(
+            "instrument_details ? 'rate' OR instrument_details ? 'strike_rate'",
+            name="check_instrument_details_has_required_keys"
+        ),
+    )
 
     trade_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

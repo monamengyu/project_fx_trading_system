@@ -53,6 +53,11 @@ Instruments in scope: FX Spot, FX Forward, FX Option.
 }
 ```
 
+## JSONB Validation
+
+`instrument_details` is validated at the application layer using instrument-type-specific Pydantic models (`app/schemas/instrument_details.py`), rather than relying solely on JSONB's inherent schema flexibility. A `field_validator` on `TradeCreate` dispatches to the correct model (`SpotDetails`, `ForwardDetails`, `OptionDetails`) based on `instrument_type`, rejecting mismatched or incomplete instrument attributes before they reach the database.
+
+
 ## Trade Lifecycle (Append-Only — `trade_state` table)
 
 | Field | Type | Notes |

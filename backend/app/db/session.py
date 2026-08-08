@@ -1,12 +1,9 @@
 # Set up the async database engine/session
-import os
-
-from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
-load_dotenv()  # search for .env file, load every KEY=value line into os.environ
+from app.core.config import settings
 
-DATABASE_URL = os.environ["DATABASE_URL"].replace("postgresql://", "postgresql+asyncpg://")  # to use the asyncpg async driver
+DATABASE_URL = settings.database_url.replace("postgresql://", "postgresql+asyncpg://")  # to use the asyncpg async driver
 
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)

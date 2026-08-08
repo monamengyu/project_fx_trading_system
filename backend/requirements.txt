@@ -4,4 +4,4 @@ alembic
 pydantic
 psycopg2-binary
 pytest-asyncio
-
+python-dotenv

@@ -8,7 +8,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.enums import InstrumentType, CurrencyPair, Direction, Currency, TradeStatus
-from app.schemas.instrument_details import validate_instrument_details
 
 
 class Trade(Base):

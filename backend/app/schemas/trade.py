@@ -1,10 +1,10 @@
 from datetime import date
 from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, model_validator
 
 from app.models.enums import InstrumentType, CurrencyPair, Direction, Currency, TradeStatus
-from app.schemas.instrument_details import validate_instrument_details
+from app.schemas.instrument_details import InstrumentDetails
 
 
 class TradeCreate(BaseModel):
@@ -17,12 +17,13 @@ class TradeCreate(BaseModel):
     notional_2: Optional[float] = None
     counterparty: str
     comment: Optional[str] = None
-    instrument_details: dict
+    instrument_details: InstrumentDetails
 
-    @field_validator("instrument_details")
-    @classmethod
-    def check_instrument_details(cls, value, info):
-        instrument_type = info.data.get("instrument_type")
-        if instrument_type is not None:
-            validate_instrument_details(instrument_type.value, value)
-        return value
+    @model_validator(mode="after")
+    def check_instrument_type_matches(self):
+        if self.instrument_details.instrument_type != self.instrument_type.value:
+            raise ValueError(
+                f"instrument_details.instrument_type ({self.instrument_details.instrument_type}) "
+                f"does not match instrument_type ({self.instrument_type.value})"
+            )
+        return self

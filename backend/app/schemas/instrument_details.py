@@ -1,20 +1,23 @@
 from datetime import date
-from typing import Literal, Union
+from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SpotDetails(BaseModel):
+    instrument_type: Literal["SPOT"]
     rate: float
     settlement_date: date
 
 
 class ForwardDetails(BaseModel):
+    instrument_type: Literal["FORWARD"]
     rate: float
     settlement_date: date
 
 
 class OptionDetails(BaseModel):
+    instrument_type: Literal["OPTION"]
     option_type: Literal["CALL", "PUT"]
     strike_rate: float
     premium_date: date
@@ -25,16 +28,7 @@ class OptionDetails(BaseModel):
     exercise_style: Literal["EUROPEAN", "AMERICAN"]
 
 
-InstrumentDetails = Union[SpotDetails, ForwardDetails, OptionDetails]
-
-def validate_instrument_details(instrument_type: str, details: dict) -> BaseModel:
-    """Validate instrument_details against the correct shape for the given instrument_type."""
-    mapping = {
-        "SPOT": SpotDetails,
-        "FORWARD": ForwardDetails,
-        "OPTION": OptionDetails,
-    }
-    model_cls = mapping.get(instrument_type)
-    if model_cls is None:
-        raise ValueError(f"Unknown instrument_type: {instrument_type}")
-    return model_cls(**details)
+InstrumentDetails = Annotated[
+    Union[SpotDetails, ForwardDetails, OptionDetails],
+    Field(discriminator="instrument_type"),
+]

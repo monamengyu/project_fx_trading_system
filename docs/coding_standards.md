@@ -39,6 +39,7 @@ feat: add NL parse endpoint
 fix: correct notional_2 calculation on forward trades
 docs: update API contracts for trade confirmation flow
 chore: bump FastAPI version
+test: unit test of TradeCreate
 ```
 
 ### Branch naming

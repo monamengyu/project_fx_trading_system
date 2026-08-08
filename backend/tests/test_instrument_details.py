@@ -13,9 +13,9 @@ def test_spot_trade_valid():
         notional_1=1000000,
         currency_2="USD",
         counterparty="BANK_A",
-        instrument_details={"rate": 1.085, "settlement_date": "2026-08-01"},
+        instrument_details={"instrument_type": "SPOT", "rate": 1.085, "settlement_date": "2026-08-01"},
     )
-    assert trade.instrument_details["rate"] == 1.085
+    assert trade.instrument_details.rate == 1.085
 
 
 def test_option_trade_valid():
@@ -27,9 +27,9 @@ def test_option_trade_valid():
         notional_1=1000000,
         currency_2="USD",
         counterparty="BANK_A",
-        instrument_details={"option_type": "CALL", "strike_rate": 1.085, "premium_date": "2026-07-30", "expiry_date": "2026-09-15", "delivery_date": "2026-09-17", "premium": 12500, "premium_currency": "USD", "exercise_style": "EUROPEAN"},
+        instrument_details={"instrument_type": "OPTION", "option_type": "CALL", "strike_rate": 1.085, "premium_date": "2026-07-30", "expiry_date": "2026-09-15", "delivery_date": "2026-09-17", "premium": 12500, "premium_currency": "USD", "exercise_style": "EUROPEAN"},
     )
-    assert trade.instrument_details["strike_rate"] == 1.085
+    assert trade.instrument_details.strike_rate == 1.085
 
 
 def test_option_trade_missing_strike_rate_fails():
@@ -42,5 +42,5 @@ def test_option_trade_missing_strike_rate_fails():
             notional_1=1000000,
             currency_2="USD",
             counterparty="BANK_A",
-            instrument_details={"option_type": "CALL"},  # missing required fields
+            instrument_details={"instrument_type": "OPTION", "option_type": "CALL"},  # missing required fields
         )

@@ -1,0 +1,41 @@
+import uuid
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.session import get_db
+from app.models.enums import TradeStatus
+from app.models.trade import Trade
+from app.schemas.trade import TradeCreate, TradeRead
+
+router = APIRouter(prefix="/trades", tags=["trades"])
+
+
+@router.post("", response_model=TradeRead, status_code=201)
+async def create_trade(payload: TradeCreate, db: AsyncSession = Depends(get_db)) -> Trade:
+    trade = Trade(
+        **payload.model_dump(exclude={"instrument_details"}),  # Unpack the payload excluding instrument_details straight into Trade()
+        instrument_details=payload.instrument_details.model_dump(mode="json"),
+        trade_date=date.today(),
+        status=TradeStatus.PENDING_CONFIRMATION,
+    )
+    db.add(trade)
+    await db.commit()
+    await db.refresh(trade)
+    return trade
+
+
+@router.get("", response_model=list[TradeRead])
+async def list_trades(db: AsyncSession = Depends(get_db)) -> list[Trade]:
+    result = await db.execute(select(Trade))
+    return list(result.scalars().all())
+
+
+@router.get("/{trade_id}", response_model=TradeRead)
+async def get_trade(trade_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Trade:
+    trade = await db.get(Trade, trade_id)
+    if trade is None:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    return trade

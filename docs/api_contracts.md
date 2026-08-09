@@ -2,7 +2,7 @@
 
 ## Conventions
 
-- Base path: `/api/v1`
+- Base path: none currently (all trade routes are unversioned, e.g. `/trades`); a version prefix such as `/api/v1` may be introduced later if/when needed
 - Format: JSON request/response bodies (`Content-Type: application/json`)
 - Auth: not in scope for this project; endpoints are unauthenticated
 - Timestamps: ISO 8601 (`YYYY-MM-DDTHH:MM:SSZ`)
@@ -34,7 +34,7 @@ All error responses use this shape, regardless of endpoint:
 
 ## Trades
 
-### `POST /api/v1/trades`
+### `POST /trades`
 Book a new trade directly (structured form entry, not via NL parsing).
 
 **Request**
@@ -50,6 +50,7 @@ Book a new trade directly (structured form entry, not via NL parsing).
   "counterparty": "BANK_A",
   "comment": "",
   "instrument_details": {
+    "instrument_type": "SPOT",
     "rate": 1.085,
     "settlement_date": "2026-08-01"
   }
@@ -69,26 +70,20 @@ Book a new trade directly (structured form entry, not via NL parsing).
   "notional_2": 1085000,
   "trade_date": "2026-07-29",
   "counterparty": "BANK_A",
-  "status": "BOOKED",
+  "status": "PENDING_CONFIRMATION",
   "comment": "",
-  "instrument_details": { "rate": 1.085, "settlement_date": "2026-08-01" }
+  "instrument_details": { "instrument_type": "SPOT", "rate": 1.085, "settlement_date": "2026-08-01" }
 }
 ```
 
-### `GET /api/v1/trades`
-List/filter trades for the blotter view.
+`trade_date` and `status` are server-assigned — `trade_date` defaults to today, `status` starts at `PENDING_CONFIRMATION`. Neither can be set by the client on create.
 
-**Query params:** `instrument_type`, `currency_pair`, `status`, `counterparty`, `from_date`, `to_date`
+### `GET /trades`
+List all trades.
 
-**Response `200 OK`**
-```json
-{
-  "results": [ { "...trade object..." } ],
-  "count": 1
-}
-```
+**Response `200 OK`**: a bare JSON array of trade objects (same shape as the `POST` response). Filtering/pagination is not yet implemented.
 
-### `GET /api/v1/trades/{trade_id}`
+### `GET /trades/{trade_id}`
 Get a single trade by ID.
 
 **Response `200 OK`**: full trade object

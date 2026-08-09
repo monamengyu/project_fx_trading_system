@@ -26,6 +26,7 @@ Instruments in scope: FX Spot, FX Forward, FX Option.
 ### FX Spot
 ```json
 {
+  "instrument_type": "SPOT",
   "rate": 1.0850,
   "settlement_date": "2026-08-01"
 }
@@ -34,6 +35,7 @@ Instruments in scope: FX Spot, FX Forward, FX Option.
 ### FX Forward
 ```json
 {
+  "instrument_type": "FORWARD",
   "rate": 1.0920,
   "settlement_date": "2026-11-01"
 }
@@ -42,6 +44,7 @@ Instruments in scope: FX Spot, FX Forward, FX Option.
 ### FX Option
 ```json
 {
+  "instrument_type": "OPTION",
   "option_type": "CALL",
   "strike_rate": 1.0850,
   "premium_date": "2026-07-30",
@@ -55,7 +58,7 @@ Instruments in scope: FX Spot, FX Forward, FX Option.
 
 ## JSONB Validation
 
-`instrument_details` is validated at the application layer using instrument-type-specific Pydantic models (`app/schemas/instrument_details.py`), rather than relying solely on JSONB's inherent schema flexibility. A `field_validator` on `TradeCreate` dispatches to the correct model (`SpotDetails`, `ForwardDetails`, `OptionDetails`) based on `instrument_type`, rejecting mismatched or incomplete instrument attributes before they reach the database.
+`instrument_details` is validated at the application layer using instrument-type-specific Pydantic models (`app/schemas/instrument_details.py`) — `SpotDetails`, `ForwardDetails`, `OptionDetails` — combined into a discriminated union tagged on each model's own `instrument_type` field. Pydantic dispatches to the correct model automatically based on that tag, rejecting mismatched or incomplete instrument attributes before they reach the database. `TradeCreate` additionally cross-validates that the trade-level `instrument_type` matches the tag inside `instrument_details`, so the two can't drift apart.
 
 
 ## Trade Lifecycle (Append-Only — `trade_state` table)

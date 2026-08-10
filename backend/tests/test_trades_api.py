@@ -1,0 +1,74 @@
+import pytest
+from httpx import AsyncClient, ASGITransport
+from sqlalchemy import delete
+
+from app.main import app
+from app.db.session import AsyncSessionLocal
+from app.models.trade import Trade
+
+
+@pytest.fixture
+async def client():
+    created_ids = []
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        ac.created_trade_ids = created_ids
+        yield ac
+    if created_ids:
+        async with AsyncSessionLocal() as session:
+            await session.execute(delete(Trade).where(Trade.trade_id.in_(created_ids)))
+            await session.commit()
+
+
+SPOT_PAYLOAD = {
+    "instrument_type": "SPOT",
+    "currency_pair": "EURUSD",
+    "direction": "BUY",
+    "currency_1": "EUR",
+    "notional_1": 1000000,
+    "currency_2": "USD",
+    "counterparty": "BANK_A",
+    "instrument_details": {"instrument_type": "SPOT", "rate": 1.085, "settlement_date": "2026-08-01"},
+}
+
+
+async def _post_trade(client, payload=SPOT_PAYLOAD):
+    response = await client.post("/trades", json=payload)
+    if response.status_code == 201:
+        client.created_trade_ids.append(response.json()["trade_id"])
+    return response
+
+
+async def test_create_trade_success(client):
+    response = await _post_trade(client)
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "PENDING_CONFIRMATION"
+    assert body["instrument_details"]["rate"] == 1.085
+
+
+async def test_create_trade_mismatched_instrument_type_fails(client):
+    bad_payload = {**SPOT_PAYLOAD, "instrument_type": "FORWARD"}
+    response = await _post_trade(client, bad_payload)
+    assert response.status_code == 422
+
+
+async def test_list_trades(client):
+    await _post_trade(client)
+    response = await client.get("/trades")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+    assert len(response.json()) >= 1
+
+
+async def test_get_trade_by_id(client):
+    created = await _post_trade(client)
+    trade_id = created.json()["trade_id"]
+    response = await client.get(f"/trades/{trade_id}")
+    assert response.status_code == 200
+    assert response.json()["trade_id"] == trade_id
+
+
+async def test_get_trade_not_found(client):
+    response = await client.get("/trades/00000000-0000-0000-0000-000000000000")
+    assert response.status_code == 404

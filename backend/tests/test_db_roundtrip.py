@@ -24,7 +24,7 @@ async def test_insert_and_fetch_trade():
             counterparty="BANK_A",
             status=TradeStatus.BOOKED,
             comment=None,
-            instrument_details={"rate": 1.085, "settlement_date": "2026-08-01"},
+            instrument_details={"instrument_type": "SPOT", "rate": 1.085, "settlement_date": "2026-08-01"},
         )
         session.add(trade)
         await session.commit()
@@ -32,3 +32,6 @@ async def test_insert_and_fetch_trade():
         fetched = await session.get(Trade, trade.trade_id)
         assert fetched is not None
         assert fetched.counterparty == "BANK_A"
+
+        await session.delete(fetched)
+        await session.commit()

@@ -1,3 +1,5 @@
+fastapi
+uvicorn
 sqlalchemy[asyncio]>=2.0
 asyncpg
 alembic
@@ -5,4 +7,5 @@ pydantic
 pydantic-settings
 psycopg2-binary
 pytest-asyncio
+httpx
 python-dotenv

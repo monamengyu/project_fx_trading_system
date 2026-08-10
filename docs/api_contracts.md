@@ -164,13 +164,18 @@ Confirm a previously parsed trade (referenced by `parse_id`), optionally with us
 
 ## Market Data
 
-### `GET /api/v1/market-data/rates`
-**Query params:** `pair` (e.g. `EURUSD`)
+### `GET /market-data/rates`
+Source: [Frankfurter](https://api.frankfurter.dev) (free, wraps ECB daily reference rates). Rates update once per ECB business day, so `as_of` is a date, not a timestamp.
+
+**Query params:** `pair` (e.g. `EURUSD`, `GBPUSD`, `USDJPY`)
 
 **Response `200 OK`**
 ```json
-{ "pair": "EURUSD", "rate": 1.0862, "as_of": "2026-07-29T10:15:00Z" }
+{ "pair": "EURUSD", "rate": 1.0862, "as_of": "2026-07-29" }
 ```
+
+**Response `422 Unprocessable Entity`** if `pair` isn't a supported `CurrencyPair`
+**Response `502 Bad Gateway`** if the upstream Frankfurter request fails
 
 ---
 

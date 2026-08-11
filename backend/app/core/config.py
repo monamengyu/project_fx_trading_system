@@ -6,6 +6,7 @@ class Settings(BaseSettings):
 
     database_url: str
     app_name: str = "FX Trading System"
+    market_data_cache_ttl_seconds: int = 3600
 
 
 settings = Settings()

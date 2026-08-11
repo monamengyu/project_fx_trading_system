@@ -177,6 +177,18 @@ Source: [Frankfurter](https://api.frankfurter.dev) (free, wraps ECB daily refere
 **Response `422 Unprocessable Entity`** if `pair` isn't a supported `CurrencyPair`
 **Response `502 Bad Gateway`** if the upstream Frankfurter request fails
 
+**Caching behaviour**
+
+Rates are cached in memory per currency pair for `market_data_cache_ttl_seconds`
+(default `3600`, configurable via env/`.env`). While a cached rate is fresh,
+repeated calls are served from the cache and never hit the upstream provider.
+
+If the upstream Frankfurter request fails and a previously cached rate exists
+(even one that has expired), the stale rate is returned with `200 OK` using its
+original `as_of` date — the response stays available and the date makes the
+staleness transparent. `502 Bad Gateway` is only returned when the upstream
+fails and no cached rate exists for the pair.
+
 ---
 
 ## WebSocket Endpoints

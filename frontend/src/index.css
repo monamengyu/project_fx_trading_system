@@ -1,0 +1,370 @@
+:root {
+  --bg: #0b1220;
+  --bg-panel: #101a2c;
+  --bg-panel-2: #16213a;
+  --border: #22304d;
+  --text: #e6edf7;
+  --text-muted: #8a9bb8;
+  --accent: #2dd4bf;
+  --accent-strong: #14b8a6;
+  --success: #34d399;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --muted: #94a3b8;
+  --radius: 10px;
+  --header-h: 60px;
+  --font:
+    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- Header ------------------------------------------------------------- */
+
+.header {
+  height: var(--header-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 20px;
+  background: linear-gradient(180deg, #0e1830, #0b1220);
+  border-bottom: 1px solid var(--border);
+}
+
+.header__brand {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.header__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+
+.header__subtitle {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header__badge {
+  font-size: 12px;
+  color: var(--success);
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  background: rgba(52, 211, 153, 0.08);
+  padding: 5px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.header__badge::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 8px var(--success);
+  vertical-align: middle;
+}
+
+/* --- Three-panel layout -------------------------------------------------- */
+
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 340px;
+  gap: 16px;
+  padding: 16px;
+}
+
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel__body {
+  padding: 16px;
+  flex: 1;
+  overflow: auto;
+}
+
+.panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.panel__title {
+  margin: 0 0 14px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--text-muted);
+}
+
+.panel__error {
+  color: var(--danger);
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.panel__hint {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 24px 0;
+}
+
+/* --- Market data / rates ------------------------------------------------ */
+
+.rates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.rate__pair {
+  font-weight: 600;
+  letter-spacing: 0.4px;
+}
+
+.rate__value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--accent);
+}
+
+.rate__value--empty {
+  color: var(--text-muted);
+}
+
+.rate__date {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* --- Trade blotter ------------------------------------------------------- */
+
+.blotter {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.blotter th,
+.blotter td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.blotter th {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.blotter tbody tr:hover {
+  background: rgba(45, 212, 191, 0.04);
+}
+
+.badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badge--success {
+  color: var(--success);
+  background: rgba(52, 211, 153, 0.12);
+}
+
+.badge--warn {
+  color: var(--warn);
+  background: rgba(251, 191, 36, 0.12);
+}
+
+.badge--danger {
+  color: var(--danger);
+  background: rgba(248, 113, 113, 0.12);
+}
+
+.badge--muted {
+  color: var(--muted);
+  background: rgba(148, 163, 184, 0.12);
+}
+
+/* --- New trade form ------------------------------------------------------ */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.field__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+}
+
+.field__input,
+.field__select {
+  background: var(--bg-panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 14px;
+  font-family: inherit;
+  width: 100%;
+}
+
+.field__input:focus,
+.field__select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btn--primary {
+  background: var(--accent-strong);
+  color: #06231f;
+}
+
+.btn--primary:hover {
+  background: var(--accent);
+}
+
+.btn--primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.btn--ghost:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.form__result {
+  font-size: 12px;
+  margin: 0;
+  word-break: break-word;
+}
+
+.form__result--ok {
+  color: var(--success);
+}
+
+.form__result--error {
+  color: var(--danger);
+}
+
+/* --- Responsive ---------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    overflow-y: auto;
+  }
+
+  .panel--left,
+  .panel--right {
+    max-height: 320px;
+  }
+}

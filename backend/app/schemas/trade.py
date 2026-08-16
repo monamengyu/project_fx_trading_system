@@ -30,6 +30,28 @@ class TradeCreate(BaseModel):
         return self
 
 
+class TradeCancelRequest(BaseModel):
+    comment: Optional[str] = None
+
+
+class TradeAmendRequest(BaseModel):
+    notional_1: Optional[float] = None
+    notional_2: Optional[float] = None
+    comment: Optional[str] = None
+
+    @model_validator(mode="after")
+    def require_at_least_one_change(self):
+        if (
+            self.notional_1 is None
+            and self.notional_2 is None
+            and self.comment is None
+        ):
+            raise ValueError(
+                "amend requires at least one of notional_1, notional_2 or comment"
+            )
+        return self
+
+
 class TradeRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

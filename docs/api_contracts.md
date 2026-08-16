@@ -80,9 +80,19 @@ Book a new trade directly (structured form entry, not via NL parsing).
 `trade_date` and `status` are server-assigned — `trade_date` defaults to today, `status` starts at `PENDING_CONFIRMATION`. Neither can be set by the client on create.
 
 ### `GET /trades`
-List all trades.
+List trades (the blotter) with optional filters and offset/limit pagination. All query params are optional.
 
-**Response `200 OK`**: a bare JSON array of trade objects (same shape as the `POST` response). Filtering/pagination is not yet implemented.
+| Query param | Type | Meaning |
+|---|---|---|
+| `instrument_type` | enum | SPOT, FORWARD, OPTION |
+| `currency_pair` | enum | e.g. EURUSD |
+| `status` | enum | PENDING_CONFIRMATION, BOOKED, CANCELLED, MATURED |
+| `trade_date_from` | date | Inclusive lower bound on `trade_date` (YYYY-MM-DD) |
+| `trade_date_to` | date | Inclusive upper bound on `trade_date` (YYYY-MM-DD) |
+| `limit` | int | Max rows to return (default 50) |
+| `offset` | int | Rows to skip (default 0) |
+
+**Response `200 OK`**: a bare JSON array of trade objects (same shape as the `POST` response), ordered by `trade_date` descending.
 
 ### `GET /trades/{trade_id}`
 Get a single trade by ID.
@@ -137,6 +147,32 @@ Amend a booked trade (notional and/or comment). The trade's `status` stays `BOOK
 **Response `404 Not Found`** if `trade_id` doesn't exist
 **Response `409 Conflict`** if the trade is not `BOOKED`
 **Response `422 Unprocessable Entity`** if the body is empty
+
+---
+
+## Positions
+
+### `GET /positions`
+Position summary per currency pair, aggregated from confirmed (`BOOKED`) trades. Both currency legs are always reported: `*_notional_1` in `currency_1`, `*_notional_2` in `currency_2`. `net_notional_*` is BUY notional − SELL notional. The currency_2 leg uses a trade's explicit `notional_2` when present, otherwise it is derived as `notional_1 × rate`; if the rate is unavailable and no explicit `notional_2` exists, the currency_2 fields are `null`. `mtm_value` marks the net position to market using the current rate (in currency_2), and is `null` if the rate is unavailable.
+
+**Response `200 OK`**
+```json
+[
+  {
+    "currency_pair": "EURUSD",
+    "currency_1": "EUR",
+    "currency_2": "USD",
+    "count": 2,
+    "total_notional_1": 1400000.0,
+    "total_notional_2": 1610000.0,
+    "net_notional_1": 600000.0,
+    "net_notional_2": 690000.0,
+    "mtm_value": 690000.0
+  }
+]
+```
+
+PENDING_CONFIRMATION, CANCELLED and MATURED trades are excluded from positions.
 
 ---
 

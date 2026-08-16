@@ -9,3 +9,4 @@ psycopg2-binary
 pytest-asyncio
 httpx
 python-dotenv
+websockets

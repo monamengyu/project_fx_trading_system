@@ -1,10 +1,11 @@
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete
 
-from app.main import app
 from app.db.session import AsyncSessionLocal
+from app.main import app
 from app.models.trade import Trade
+from app.models.trade_state import TradeStateLog
 
 
 @pytest.fixture
@@ -16,6 +17,10 @@ async def client():
         yield ac
     if created_ids:
         async with AsyncSessionLocal() as session:
+            # delete lifecycle rows first: the FK has no ON DELETE CASCADE
+            await session.execute(
+                delete(TradeStateLog).where(TradeStateLog.trade_id.in_(created_ids))
+            )
             await session.execute(delete(Trade).where(Trade.trade_id.in_(created_ids)))
             await session.commit()
 

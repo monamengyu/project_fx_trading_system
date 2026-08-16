@@ -10,7 +10,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import TradeState
+from app.models.enums import TradeState, TradeStatus
+from app.models.trade import Trade
 from app.models.trade_state import TradeStateLog
 
 
@@ -35,3 +36,44 @@ async def append_state(
     )
     db.add(entry)
     return entry
+
+
+async def cancel_trade(
+    db: AsyncSession,
+    trade: Trade,
+    changed_by: str = "system",
+    notes: str | None = None,
+) -> TradeStateLog:
+    """Cancel a trade: `status` becomes CANCELLED and a log entry is appended.
+
+    The trade row is never deleted — only its state changes. Raises
+    ``ValueError`` if the trade is not in a cancellable state.
+    """
+    if trade.status not in (
+        TradeStatus.PENDING_CONFIRMATION,
+        TradeStatus.BOOKED,
+    ):
+        raise ValueError(
+            f"trade {trade.trade_id} in state {trade.status.value} cannot be cancelled"
+        )
+    trade.status = TradeStatus.CANCELLED
+    return await append_state(
+        db, trade.trade_id, TradeState.CANCELLED, changed_by, notes
+    )
+
+
+async def amend_trade(
+    db: AsyncSession,
+    trade: Trade,
+    changed_by: str = "system",
+    notes: str | None = None,
+) -> TradeStateLog:
+    """Amend a booked trade: `status` stays BOOKED and an AMENDED entry is logged.
+
+    Raises ``ValueError`` if the trade is not BOOKED.
+    """
+    if trade.status != TradeStatus.BOOKED:
+        raise ValueError(
+            f"trade {trade.trade_id} in state {trade.status.value} cannot be amended"
+        )
+    return await append_state(db, trade.trade_id, TradeState.AMENDED, changed_by, notes)

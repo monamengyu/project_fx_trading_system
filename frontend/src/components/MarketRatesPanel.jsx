@@ -1,19 +1,34 @@
+import { useState } from "react";
 import { useMarketRates } from "../hooks/useMarketRates.js";
+import { useMarketRatesSocket } from "../hooks/useMarketRatesSocket.js";
 import { SUPPORTED_PAIRS } from "../services/marketData.js";
 
 export function MarketRatesPanel() {
   const { rates, loading, error } = useMarketRates();
+  const [liveRates, setLiveRates] = useState({});
+  const [liveConnected, setLiveConnected] = useState(false);
+
+  // live WebSocket updates overlay the REST snapshot
+  useMarketRatesSocket((message) => {
+    setLiveRates((prev) => ({ ...prev, [message.pair]: message }));
+    setLiveConnected(true);
+  });
+
+  const displayRates = { ...rates, ...liveRates };
 
   return (
     <div className="panel__body">
-      <h2 className="panel__title">Market Data</h2>
+      <div className="panel__header">
+        <h2 className="panel__title">Market Data</h2>
+        {liveConnected && <span className="badge badge--success">LIVE</span>}
+      </div>
       {error && <p className="panel__error">{error}</p>}
-      {!error && loading && Object.keys(rates).length === 0 && (
+      {!error && loading && Object.keys(displayRates).length === 0 && (
         <p className="panel__hint">Loading rates…</p>
       )}
       <ul className="rates">
         {SUPPORTED_PAIRS.map((pair) => {
-          const entry = rates[pair];
+          const entry = displayRates[pair];
           return (
             <li key={pair} className="rate">
               <span className="rate__pair">{pair}</span>

@@ -89,8 +89,8 @@ Get a single trade by ID.
 **Response `200 OK`**: full trade object
 **Response `404 Not Found`** if trade_id doesn't exist
 
-### `GET /api/v1/trades/{trade_id}/history`
-Get the append-only lifecycle log for a trade.
+### `GET /trades/{trade_id}/history`
+Get the append-only lifecycle log for a trade. Every state transition (including the initial booking) appends an immutable row to the `trade_state` log.
 
 **Response `200 OK`**
 ```json
@@ -99,7 +99,7 @@ Get the append-only lifecycle log for a trade.
   "history": [
     {
       "state_id": 1,
-      "state": "BOOKED",
+      "state": "PENDING_CONFIRMATION",
       "changed_at": "2026-07-29T10:15:00Z",
       "changed_by": "system",
       "notes": ""
@@ -107,6 +107,10 @@ Get the append-only lifecycle log for a trade.
   ]
 }
 ```
+
+**Response `404 Not Found`** if `trade_id` doesn't exist
+
+Booking a trade via `POST /trades` creates the trade with `status: PENDING_CONFIRMATION` and appends the matching initial entry to its lifecycle log (`changed_by: "system"`).
 
 ---
 

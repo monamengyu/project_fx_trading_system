@@ -260,12 +260,14 @@ fails and no cached rate exists for the pair.
 ## WebSocket Endpoints
 
 ### `WS /ws/market-data`
-Streams live rate updates to subscribed clients.
+Streams live rate updates to subscribed clients. The backend pushes a message per supported pair roughly every 5 seconds while at least one client is connected.
 
 **Server → Client message**
 ```json
-{ "pair": "EURUSD", "rate": 1.0863, "as_of": "2026-07-29T10:15:05Z" }
+{ "pair": "EURUSD", "rate": 1.0863, "as_of": "2026-08-14" }
 ```
+
+`as_of` is the Frankfurter reference-rate date (rates update once per ECB business day), matching the REST `GET /market-data/rates` response.
 
 ### `WS /ws/positions`
 Streams live mark-to-market (MTM) position updates.

@@ -27,6 +27,7 @@ All error responses use this shape, regardless of endpoint:
 |---|---|
 | 400 | Malformed request |
 | 404 | Resource not found |
+| 409 | State conflict (e.g. cancelling/amending a trade in an invalid state) |
 | 422 | Validation error (field-level) |
 | 500 | Unexpected server error |
 
@@ -111,6 +112,31 @@ Get the append-only lifecycle log for a trade. Every state transition (including
 **Response `404 Not Found`** if `trade_id` doesn't exist
 
 Booking a trade via `POST /trades` creates the trade with `status: PENDING_CONFIRMATION` and appends the matching initial entry to its lifecycle log (`changed_by: "system"`).
+
+### `POST /trades/{trade_id}/cancel`
+Cancel a trade. Allowed from `PENDING_CONFIRMATION` or `BOOKED`. The trade row is **not deleted** — `status` becomes `CANCELLED` and a `CANCELLED` entry is appended to the lifecycle log.
+
+**Request**
+```json
+{ "comment": "not agreed" }
+```
+
+**Response `200 OK`**: full trade object with `status: "CANCELLED"`
+**Response `404 Not Found`** if `trade_id` doesn't exist
+**Response `409 Conflict`** if the trade is not in a cancellable state (e.g. already `CANCELLED`)
+
+### `POST /trades/{trade_id}/amend`
+Amend a booked trade (notional and/or comment). The trade's `status` stays `BOOKED` and an `AMENDED` entry is appended to the lifecycle log.
+
+**Request** (at least one field required)
+```json
+{ "notional_1": 2000000, "comment": "increased size" }
+```
+
+**Response `200 OK`**: full trade object with the amended fields
+**Response `404 Not Found`** if `trade_id` doesn't exist
+**Response `409 Conflict`** if the trade is not `BOOKED`
+**Response `422 Unprocessable Entity`** if the body is empty
 
 ---
 

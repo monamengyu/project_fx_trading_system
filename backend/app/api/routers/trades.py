@@ -9,8 +9,14 @@ from app.db.session import get_db
 from app.models.enums import TradeState, TradeStatus
 from app.models.trade import Trade
 from app.models.trade_state import TradeStateLog
-from app.schemas.trade import TradeCreate, TradeHistoryRead, TradeRead
-from app.services.trade_lifecycle import append_state
+from app.schemas.trade import (
+    TradeAmendRequest,
+    TradeCancelRequest,
+    TradeCreate,
+    TradeHistoryRead,
+    TradeRead,
+)
+from app.services import trade_lifecycle
 
 router = APIRouter(prefix="/trades", tags=["trades"])
 
@@ -26,7 +32,9 @@ async def create_trade(payload: TradeCreate, db: AsyncSession = Depends(get_db))
     db.add(trade)
     await db.flush()  # assign trade_id before writing the lifecycle log
     # record the initial state in the append-only lifecycle log
-    await append_state(db, trade.trade_id, TradeState.PENDING_CONFIRMATION)
+    await trade_lifecycle.append_state(
+        db, trade.trade_id, TradeState.PENDING_CONFIRMATION
+    )
     await db.commit()
     await db.refresh(trade)
     return trade
@@ -59,3 +67,45 @@ async def get_trade_history(
         .order_by(TradeStateLog.state_id)
     )
     return {"trade_id": trade_id, "history": list(result.scalars().all())}
+
+
+@router.post("/{trade_id}/cancel", response_model=TradeRead)
+async def cancel_trade(
+    trade_id: uuid.UUID,
+    payload: TradeCancelRequest,
+    db: AsyncSession = Depends(get_db),
+) -> Trade:
+    trade = await db.get(Trade, trade_id)
+    if trade is None:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    try:
+        await trade_lifecycle.cancel_trade(db, trade, notes=payload.comment)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await db.commit()
+    await db.refresh(trade)
+    return trade
+
+
+@router.post("/{trade_id}/amend", response_model=TradeRead)
+async def amend_trade(
+    trade_id: uuid.UUID,
+    payload: TradeAmendRequest,
+    db: AsyncSession = Depends(get_db),
+) -> Trade:
+    trade = await db.get(Trade, trade_id)
+    if trade is None:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    try:
+        await trade_lifecycle.amend_trade(db, trade, notes=payload.comment)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if payload.notional_1 is not None:
+        trade.notional_1 = payload.notional_1
+    if payload.notional_2 is not None:
+        trade.notional_2 = payload.notional_2
+    if payload.comment is not None:
+        trade.comment = payload.comment
+    await db.commit()
+    await db.refresh(trade)
+    return trade

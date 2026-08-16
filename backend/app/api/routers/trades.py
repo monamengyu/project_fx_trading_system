@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.models.enums import TradeState, TradeStatus
+from app.models.enums import CurrencyPair, InstrumentType, TradeState, TradeStatus
 from app.models.trade import Trade
 from app.models.trade_state import TradeStateLog
 from app.schemas.trade import (
@@ -41,8 +41,34 @@ async def create_trade(payload: TradeCreate, db: AsyncSession = Depends(get_db))
 
 
 @router.get("", response_model=list[TradeRead])
-async def list_trades(db: AsyncSession = Depends(get_db)) -> list[Trade]:
-    result = await db.execute(select(Trade))
+async def list_trades(
+    db: AsyncSession = Depends(get_db),
+    instrument_type: InstrumentType | None = None,
+    currency_pair: CurrencyPair | None = None,
+    status: TradeStatus | None = None,
+    trade_date_from: date | None = None,
+    trade_date_to: date | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[Trade]:
+    """List trades with optional filters and simple offset/limit pagination."""
+    query = select(Trade)
+    if instrument_type is not None:
+        query = query.where(Trade.instrument_type == instrument_type)
+    if currency_pair is not None:
+        query = query.where(Trade.currency_pair == currency_pair)
+    if status is not None:
+        query = query.where(Trade.status == status)
+    if trade_date_from is not None:
+        query = query.where(Trade.trade_date >= trade_date_from)
+    if trade_date_to is not None:
+        query = query.where(Trade.trade_date <= trade_date_to)
+    query = (
+        query.order_by(Trade.trade_date.desc(), Trade.trade_id)
+        .offset(offset)
+        .limit(limit)
+    )
+    result = await db.execute(query)
     return list(result.scalars().all())
 
 

@@ -1,9 +1,9 @@
 # FX Trading System — Frontend
 
-React (Vite) frontend for the FX trading system, with a three-panel layout:
-market data rates, trade blotter, and new-trade entry. All API calls are
-centralised under `src/services/` and never called directly from components
-(see `docs/coding_standards.md`).
+React (Vite) frontend for the FX trading system, with a trading dashboard
+layout: market data rates, position summary, trade blotter, and new-trade
+entry. All API calls are centralised under `src/services/` and never called
+directly from components (see `docs/coding_standards.md`).
 
 ## Requirements
 
@@ -67,9 +67,9 @@ Vitest config lives in `vite.config.js` (`test` block), shared setup in `src/tes
 ```
 src/
   components/   Presentational UI (PascalCase .jsx)
-  hooks/        Data-fetching hooks (useMarketRates, useTrades, useBookTrade)
-  services/     API wrappers (api base client, marketData, trades)
+  hooks/        Data-fetching hooks (useMarketRates, useTrades, useBookTrade, usePositions)
+  services/     API wrappers (api base client, marketData, trades, positions)
   test/         Vitest setup file
-  App.jsx       Three-panel composition
+  App.jsx       Dashboard composition (market data + positions rail, blotter, new trade)
   index.css     Global styles (trading-terminal theme)
 ```

@@ -1,8 +1,8 @@
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_serializer, model_validator
 
 from app.models.enums import InstrumentType, CurrencyPair, Direction, Currency, TradeStatus, TradeState
 from app.schemas.instrument_details import InstrumentDetails
@@ -57,3 +57,13 @@ class TradeStateRead(BaseModel):
     changed_at: datetime
     changed_by: str
     notes: Optional[str] = None
+
+    @field_serializer("changed_at")
+    def _serialize_changed_at(self, value: datetime) -> str:
+        # ISO 8601 UTC with Z suffix, per docs/api_contracts.md
+        return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class TradeHistoryRead(BaseModel):
+    trade_id: uuid.UUID
+    history: list[TradeStateRead]

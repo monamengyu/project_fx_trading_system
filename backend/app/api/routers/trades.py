@@ -6,9 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.models.enums import TradeStatus
+from app.models.enums import TradeState, TradeStatus
 from app.models.trade import Trade
-from app.schemas.trade import TradeCreate, TradeRead
+from app.models.trade_state import TradeStateLog
+from app.schemas.trade import TradeCreate, TradeHistoryRead, TradeRead
+from app.services.trade_lifecycle import append_state
 
 router = APIRouter(prefix="/trades", tags=["trades"])
 
@@ -22,6 +24,9 @@ async def create_trade(payload: TradeCreate, db: AsyncSession = Depends(get_db))
         status=TradeStatus.PENDING_CONFIRMATION,
     )
     db.add(trade)
+    await db.flush()  # assign trade_id before writing the lifecycle log
+    # record the initial state in the append-only lifecycle log
+    await append_state(db, trade.trade_id, TradeState.PENDING_CONFIRMATION)
     await db.commit()
     await db.refresh(trade)
     return trade
@@ -39,3 +44,18 @@ async def get_trade(trade_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> 
     if trade is None:
         raise HTTPException(status_code=404, detail="Trade not found")
     return trade
+
+
+@router.get("/{trade_id}/history", response_model=TradeHistoryRead)
+async def get_trade_history(
+    trade_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+) -> dict:
+    trade = await db.get(Trade, trade_id)
+    if trade is None:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    result = await db.execute(
+        select(TradeStateLog)
+        .where(TradeStateLog.trade_id == trade_id)
+        .order_by(TradeStateLog.state_id)
+    )
+    return {"trade_id": trade_id, "history": list(result.scalars().all())}

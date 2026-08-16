@@ -63,4 +63,6 @@ fix/websocket-reconnect
 ## Testing (baseline expectation)
 
 - Backend: `pytest`, tests under `backend/tests/`, mirroring `app/` structure
+- Frontend: `vitest` + React Testing Library (`npm test`), specs colocated next to the code they test as `*.test.jsx`
 - Minimum: one test per endpoint covering the success path and one validation-failure path
+- CI: GitHub Actions (`.github/workflows/ci.yml`) runs backend `pytest` (with a Postgres service + `alembic upgrade head`) and frontend `lint`/`test`/`build` on every push/PR

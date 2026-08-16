@@ -122,6 +122,18 @@ body {
   overflow: hidden;
 }
 
+.layout__rail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.layout__rail .panel {
+  flex: 1;
+  min-height: 0;
+}
+
 .panel__body {
   padding: 16px;
   flex: 1;
@@ -363,8 +375,7 @@ body {
     overflow-y: auto;
   }
 
-  .panel--left,
-  .panel--right {
-    max-height: 320px;
+  .layout__rail {
+    max-height: 60vh;
   }
 }

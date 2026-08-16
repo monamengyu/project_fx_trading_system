@@ -1,13 +1,17 @@
-// Three-panel layout:
-//   left   -> market data / rates
-//   center -> trade blotter (main area)
-//   right  -> new trade entry
-export function Layout({ left, center, right }) {
+// Trading dashboard layout:
+//   leftTop    -> market data
+//   leftBottom -> position summary
+//   center     -> trade blotter (main area)
+//   right      -> new trade entry
+export function Layout({ leftTop, leftBottom, center, right }) {
   return (
     <main className="layout">
-      <section className="panel panel--left">{left}</section>
-      <section className="panel panel--center">{center}</section>
-      <section className="panel panel--right">{right}</section>
+      <section className="layout__rail">
+        <div className="panel">{leftTop}</div>
+        <div className="panel">{leftBottom}</div>
+      </section>
+      <section className="panel">{center}</section>
+      <section className="panel">{right}</section>
     </main>
   );
 }

@@ -77,3 +77,54 @@ async def test_get_trade_by_id(client):
 async def test_get_trade_not_found(client):
     response = await client.get("/trades/00000000-0000-0000-0000-000000000000")
     assert response.status_code == 404
+
+
+GBPUSD_PAYLOAD = {
+    "instrument_type": "SPOT",
+    "currency_pair": "GBPUSD",
+    "direction": "BUY",
+    "currency_1": "GBP",
+    "notional_1": 500000,
+    "currency_2": "USD",
+    "counterparty": "BANK_B",
+    "instrument_details": {
+        "instrument_type": "SPOT",
+        "rate": 1.27,
+        "settlement_date": "2026-08-01",
+    },
+}
+
+
+async def test_list_trades_filters_by_currency_pair(client):
+    eurusd = await _post_trade(client, SPOT_PAYLOAD)
+    gbpusd = await _post_trade(client, GBPUSD_PAYLOAD)
+    assert eurusd.status_code == gbpusd.status_code == 201
+
+    response = await client.get("/trades", params={"currency_pair": "GBPUSD"})
+    assert response.status_code == 200
+    body = response.json()
+    assert all(t["currency_pair"] == "GBPUSD" for t in body)
+    returned_ids = {t["trade_id"] for t in body}
+    assert gbpusd.json()["trade_id"] in returned_ids
+
+
+async def test_list_trades_paginates(client):
+    await _post_trade(client)
+    await _post_trade(client)
+    await _post_trade(client)
+
+    response = await client.get("/trades", params={"limit": 2})
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+
+
+async def test_list_trades_filters_by_status(client):
+    created = await _post_trade(client)
+    trade_id = created.json()["trade_id"]
+    await client.post(f"/trades/{trade_id}/cancel", json={})
+
+    response = await client.get("/trades", params={"status": "PENDING_CONFIRMATION"})
+    assert response.status_code == 200
+    body = response.json()
+    assert all(t["status"] == "PENDING_CONFIRMATION" for t in body)
+    assert trade_id not in [t["trade_id"] for t in body]

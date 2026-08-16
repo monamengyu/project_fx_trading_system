@@ -10,7 +10,8 @@ export default [
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",
-      globals: globals.browser,
+      // browser globals + vitest globals (describe/it/expect/vi) for *.test.*
+      globals: { ...globals.browser, ...globals.vitest },
       parserOptions: {
         ecmaFeatures: { jsx: true },
       },

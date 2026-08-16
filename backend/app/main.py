@@ -1,14 +1,27 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.router import api_router
+from app.api.routers.ws import stream_rates
 from app.core.config import settings
 from app.db.session import get_db
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # background task that pushes live market rates to WebSocket subscribers
+    stream_task = asyncio.create_task(stream_rates())
+    yield
+    stream_task.cancel()
+
+
 # create the backend application, with the API represented by the object app
-app = FastAPI(title=settings.app_name)
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 # allow the React frontend (Vite dev server on :3000) to call the API
 app.add_middleware(

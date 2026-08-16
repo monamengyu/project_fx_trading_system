@@ -8,19 +8,22 @@ vi.mock("./hooks/useTrades.js", () => ({
 vi.mock("./hooks/useMarketRates.js", () => ({
   useMarketRates: () => ({ rates: {}, loading: false, error: null, refresh: vi.fn() }),
 }));
+vi.mock("./hooks/usePositions.js", () => ({
+  usePositions: () => ({
+    positions: [],
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+  }),
+}));
 
 describe("App", () => {
-  it("renders the three-panel layout", () => {
+  it("renders the dashboard layout", () => {
     render(<App />);
 
-    expect(
-      screen.getByRole("heading", { name: "Market Data" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Trade Blotter" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "New Trade" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Market Data" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Trade Blotter" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "New Trade" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Positions" })).toBeInTheDocument();
   });
 });

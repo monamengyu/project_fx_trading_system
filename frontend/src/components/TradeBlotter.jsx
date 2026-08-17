@@ -1,12 +1,33 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { StatusBadge } from "./StatusBadge.jsx";
+import { amendTrade, cancelTrade, confirmTrade } from "../services/trades.js";
 
 export function TradeBlotter({ trades, loading, error, onRefresh }) {
+  const [busyId, setBusyId] = useState(null);
+
   // Keep the blotter fresh without user interaction.
   useEffect(() => {
     const id = setInterval(onRefresh, 30000);
     return () => clearInterval(id);
   }, [onRefresh]);
+
+  async function handleStatus(tradeId, action) {
+    setBusyId(tradeId);
+    try {
+      if (action === "confirm") {
+        await confirmTrade(tradeId);
+      } else if (action === "cancel") {
+        await cancelTrade(tradeId);
+      } else {
+        await amendTrade(tradeId);
+      }
+      onRefresh();
+    } catch {
+      // keep current data; the user can retry
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <div className="panel__body">
@@ -35,6 +56,7 @@ export function TradeBlotter({ trades, loading, error, onRefresh }) {
             <th>Settlement</th>
             <th>Counterparty</th>
             <th>Status</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -53,6 +75,36 @@ export function TradeBlotter({ trades, loading, error, onRefresh }) {
               <td>{trade.counterparty}</td>
               <td>
                 <StatusBadge status={trade.status} />
+              </td>
+              <td className="blotter__actions">
+                {trade.status === "PENDING_CONFIRMATION" && (
+                  <button
+                    className="btn btn--ghost"
+                    disabled={busyId === trade.trade_id}
+                    onClick={() => handleStatus(trade.trade_id, "confirm")}
+                  >
+                    Confirm
+                  </button>
+                )}
+                {(trade.status === "PENDING_CONFIRMATION" ||
+                  trade.status === "BOOKED") && (
+                  <button
+                    className="btn btn--ghost"
+                    disabled={busyId === trade.trade_id}
+                    onClick={() => handleStatus(trade.trade_id, "cancel")}
+                  >
+                    Cancel
+                  </button>
+                )}
+                {trade.status === "BOOKED" && (
+                  <button
+                    className="btn btn--ghost"
+                    disabled={busyId === trade.trade_id}
+                    onClick={() => handleStatus(trade.trade_id, "amend")}
+                  >
+                    Amend
+                  </button>
+                )}
               </td>
             </tr>
           ))}

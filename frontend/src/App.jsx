@@ -13,9 +13,10 @@ export default function App() {
     <div className="app">
       <Header />
       <Layout
-        leftTop={<MarketRatesPanel />}
-        leftBottom={<PositionsPanel />}
-        center={
+        topLeft={<MarketRatesPanel />}
+        topCenter={<PositionsPanel />}
+        topRight={<NewTradeForm onBooked={refresh} />}
+        bottom={
           <TradeBlotter
             trades={trades}
             loading={loading}
@@ -23,7 +24,6 @@ export default function App() {
             onRefresh={refresh}
           />
         }
-        right={<NewTradeForm onBooked={refresh} />}
       />
     </div>
   );

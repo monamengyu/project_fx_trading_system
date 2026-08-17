@@ -106,10 +106,23 @@ body {
 .layout {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.layout__top {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 340px;
   gap: 16px;
-  padding: 16px;
+  min-height: 0;
+}
+
+.layout__bottom {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .panel {
@@ -120,18 +133,6 @@ body {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-}
-
-.layout__rail {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-height: 0;
-}
-
-.layout__rail .panel {
-  flex: 1;
-  min-height: 0;
 }
 
 .panel__body {
@@ -370,13 +371,11 @@ body {
 
 @media (max-width: 1100px) {
   .layout {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto;
     overflow-y: auto;
   }
 
-  .layout__rail {
-    max-height: 60vh;
+  .layout__top {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -415,4 +414,10 @@ body {
 
 .form__actions .btn {
   flex: 1;
+}
+
+.blotter__id {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

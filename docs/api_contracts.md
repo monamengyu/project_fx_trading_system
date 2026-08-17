@@ -89,6 +89,8 @@ List trades (the blotter) with optional filters and offset/limit pagination. All
 | `status` | enum | PENDING_CONFIRMATION, BOOKED, CANCELLED, MATURED |
 | `trade_date_from` | date | Inclusive lower bound on `trade_date` (YYYY-MM-DD) |
 | `trade_date_to` | date | Inclusive upper bound on `trade_date` (YYYY-MM-DD) |
+| `settlement_date_from` | date | Inclusive lower bound on `instrument_details.settlement_date` (YYYY-MM-DD) |
+| `settlement_date_to` | date | Inclusive upper bound on `instrument_details.settlement_date` (YYYY-MM-DD) |
 | `limit` | int | Max rows to return (default 50) |
 | `offset` | int | Rows to skip (default 0) |
 

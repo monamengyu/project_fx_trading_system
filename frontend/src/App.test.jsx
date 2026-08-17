@@ -3,7 +3,14 @@ import App from "./App.jsx";
 
 // Avoid real network calls: stub the data hooks the panels use.
 vi.mock("./hooks/useTrades.js", () => ({
-  useTrades: () => ({ trades: [], loading: false, error: null, refresh: vi.fn() }),
+  useTrades: () => ({
+    trades: [],
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+    filters: {},
+    setFilters: vi.fn(),
+  }),
 }));
 vi.mock("./hooks/useMarketRates.js", () => ({
   useMarketRates: () => ({ rates: {}, loading: false, error: null, refresh: vi.fn() }),

@@ -7,7 +7,7 @@ import { TradeBlotter } from "./components/TradeBlotter.jsx";
 import { useTrades } from "./hooks/useTrades.js";
 
 export default function App() {
-  const { trades, loading, error, refresh } = useTrades();
+  const { trades, loading, error, refresh, filters, setFilters } = useTrades();
 
   return (
     <div className="app">
@@ -22,6 +22,8 @@ export default function App() {
             loading={loading}
             error={error}
             onRefresh={refresh}
+            filters={filters}
+            setFilters={setFilters}
           />
         }
       />

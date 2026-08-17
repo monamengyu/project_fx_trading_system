@@ -5,11 +5,12 @@ export function useTrades() {
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [filters, setFilters] = useState({});
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchTrades();
+      const data = await fetchTrades(filters);
       setTrades(data);
       setError(null);
     } catch (err) {
@@ -17,11 +18,11 @@ export function useTrades() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filters]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  return { trades, loading, error, refresh };
+  return { trades, loading, error, refresh, filters, setFilters };
 }

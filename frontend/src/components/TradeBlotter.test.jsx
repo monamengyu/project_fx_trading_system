@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { TradeBlotter } from "./TradeBlotter.jsx";
 import { amendTrade, cancelTrade, confirmTrade } from "../services/trades.js";
 
@@ -6,6 +6,17 @@ vi.mock("../services/trades.js", () => ({
   confirmTrade: vi.fn(),
   cancelTrade: vi.fn(),
   amendTrade: vi.fn(),
+}));
+
+vi.mock("./DateRangePicker.jsx", () => ({
+  DateRangePicker: ({ label, onChange }) => (
+    <button
+      type="button"
+      onClick={() => onChange({ from: "2026-08-01", to: "2026-08-15" })}
+    >
+      {label}
+    </button>
+  ),
 }));
 
 const trade = {
@@ -27,6 +38,22 @@ const trade = {
   },
 };
 
+function renderBlotter(props = {}) {
+  const setFilters = props.setFilters ?? vi.fn();
+  const utils = render(
+    <TradeBlotter
+      trades={[]}
+      loading={false}
+      error={null}
+      onRefresh={() => {}}
+      filters={{}}
+      setFilters={setFilters}
+      {...props}
+    />,
+  );
+  return { ...utils, setFilters };
+}
+
 describe("TradeBlotter", () => {
   beforeEach(() => {
     confirmTrade.mockReset();
@@ -35,57 +62,79 @@ describe("TradeBlotter", () => {
   });
 
   it("shows a hint when there are no trades", () => {
-    render(
-      <TradeBlotter trades={[]} loading={false} error={null} onRefresh={() => {}} />,
-    );
-    expect(screen.getByText("No trades booked yet.")).toBeInTheDocument();
+    renderBlotter();
+    expect(
+      screen.getByText("No trades match the current filters."),
+    ).toBeInTheDocument();
   });
 
   it("renders trade rows with the expanded columns", () => {
-    render(
-      <TradeBlotter
-        trades={[trade]}
-        loading={false}
-        error={null}
-        onRefresh={() => {}}
-      />,
-    );
+    renderBlotter({ trades: [trade] });
+    const row = within(screen.getByRole("row", { name: /abc-123/ }));
     expect(screen.getByText("abc-123")).toBeInTheDocument();
-    expect(screen.getByText("SPOT")).toBeInTheDocument();
-    expect(screen.getByText("EURUSD")).toBeInTheDocument();
-    expect(screen.getByText("BUY")).toBeInTheDocument();
-    expect(screen.getByText("1.085")).toBeInTheDocument();
-    expect(screen.getByText("EUR")).toBeInTheDocument();
-    expect(screen.getByText("1000000")).toBeInTheDocument();
-    expect(screen.getByText("USD")).toBeInTheDocument();
-    expect(screen.getByText("1085000")).toBeInTheDocument();
-    expect(screen.getByText("2026-08-19")).toBeInTheDocument();
-    expect(screen.getByText("BANK_A")).toBeInTheDocument();
-    expect(screen.getByText("BOOKED")).toBeInTheDocument();
+    expect(row.getByText("SPOT")).toBeInTheDocument();
+    expect(row.getByText("EURUSD")).toBeInTheDocument();
+    expect(row.getByText("BUY")).toBeInTheDocument();
+    expect(row.getByText("1.085")).toBeInTheDocument();
+    expect(row.getByText("EUR")).toBeInTheDocument();
+    expect(row.getByText("1000000")).toBeInTheDocument();
+    expect(row.getByText("USD")).toBeInTheDocument();
+    expect(row.getByText("1085000")).toBeInTheDocument();
+    expect(row.getByText("2026-08-19")).toBeInTheDocument();
+    expect(row.getByText("BANK_A")).toBeInTheDocument();
+    expect(row.getByText("BOOKED")).toBeInTheDocument();
   });
 
   it("shows an error when the request fails", () => {
-    render(
-      <TradeBlotter trades={[]} loading={false} error="boom" onRefresh={() => {}} />,
-    );
+    renderBlotter({ error: "boom" });
     expect(screen.getByText("boom")).toBeInTheDocument();
   });
 
   it("confirms a pending trade from the row action", async () => {
     confirmTrade.mockResolvedValue({});
     const onRefresh = vi.fn();
-    render(
-      <TradeBlotter
-        trades={[{ ...trade, status: "PENDING_CONFIRMATION" }]}
-        loading={false}
-        error={null}
-        onRefresh={onRefresh}
-      />,
-    );
+    renderBlotter({
+      trades: [{ ...trade, status: "PENDING_CONFIRMATION" }],
+      onRefresh,
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
 
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
     expect(confirmTrade).toHaveBeenCalledWith("abc-123");
+  });
+
+  it("applies a status filter via setFilters", () => {
+    const setFilters = vi.fn();
+    renderBlotter({ setFilters });
+    fireEvent.change(screen.getByLabelText("Status"), {
+      target: { value: "BOOKED" },
+    });
+    expect(setFilters).toHaveBeenCalledWith({ status: "BOOKED" });
+  });
+
+  it("applies a trade-date range via setFilters", () => {
+    const setFilters = vi.fn();
+    renderBlotter({ setFilters });
+    fireEvent.click(screen.getByRole("button", { name: "Trade Date" }));
+    expect(setFilters).toHaveBeenCalledWith({
+      trade_date: { from: "2026-08-01", to: "2026-08-15" },
+    });
+  });
+
+  it("applies a settlement-date range via setFilters", () => {
+    const setFilters = vi.fn();
+    renderBlotter({ setFilters });
+    fireEvent.click(screen.getByRole("button", { name: "Settlement Date" }));
+    expect(setFilters).toHaveBeenCalledWith({
+      settlement_date: { from: "2026-08-01", to: "2026-08-15" },
+    });
+  });
+
+  it("resets filters with an empty object", () => {
+    const setFilters = vi.fn();
+    renderBlotter({ setFilters, filters: { status: "BOOKED" } });
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(setFilters).toHaveBeenCalledWith({});
   });
 });

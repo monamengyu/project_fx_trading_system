@@ -1,7 +1,20 @@
 import { api } from "./api.js";
 
-export async function fetchTrades() {
-  return api.get("/trades");
+export async function fetchTrades(filters = {}) {
+  const params = new URLSearchParams();
+  const add = (key, value) => {
+    if (value !== "" && value != null) params.set(key, value);
+  };
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      add(`${key}_from`, value.from);
+      add(`${key}_to`, value.to);
+    } else {
+      add(key, value);
+    }
+  });
+  const qs = params.toString();
+  return api.get(qs ? `/trades?${qs}` : "/trades");
 }
 
 export async function bookTrade(payload) {

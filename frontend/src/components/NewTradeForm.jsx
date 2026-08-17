@@ -14,41 +14,117 @@ const EMPTY_FORM = {
   settlement_date: "",
 };
 
+function buildPayload(form) {
+  const notional_1 = Number(form.notional_1);
+  const rate = Number(form.rate);
+  return {
+    instrument_type: "SPOT",
+    currency_pair: form.currency_pair,
+    direction: form.direction,
+    currency_1: form.currency_pair.slice(0, 3),
+    notional_1,
+    currency_2: form.currency_pair.slice(3),
+    notional_2: Math.round(notional_1 * rate * 100) / 100,
+    counterparty: form.counterparty,
+    comment: "",
+    instrument_details: {
+      instrument_type: "SPOT",
+      rate,
+      settlement_date: form.settlement_date,
+    },
+  };
+}
+
+function formatNumber(value) {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value);
+}
+
 export function NewTradeForm({ onBooked }) {
   const [form, setForm] = useState(EMPTY_FORM);
+  const [review, setReview] = useState(null); // payload awaiting confirmation
   const { submit, submitting, result, error } = useBookTrade();
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
-  async function handleSubmit(event) {
+  function handleReview(event) {
     event.preventDefault();
-    const trade = await submit({
-      instrument_type: "SPOT",
-      currency_pair: form.currency_pair,
-      direction: form.direction,
-      currency_1: form.currency_pair.slice(0, 3),
-      notional_1: Number(form.notional_1),
-      currency_2: form.currency_pair.slice(3),
-      counterparty: form.counterparty,
-      comment: "",
-      instrument_details: {
-        instrument_type: "SPOT",
-        rate: Number(form.rate),
-        settlement_date: form.settlement_date,
-      },
-    });
+    setReview(buildPayload(form));
+  }
+
+  function handleBack() {
+    setReview(null);
+  }
+
+  async function handleConfirm() {
+    const trade = await submit(review);
     if (trade) {
       setForm(EMPTY_FORM);
+      setReview(null);
       onBooked?.(trade);
     }
+  }
+
+  if (review) {
+    return (
+      <div className="panel__body">
+        <h2 className="panel__title">Confirm Trade</h2>
+        <ul className="review">
+          <li>
+            <span>Pair</span>
+            <strong>{review.currency_pair}</strong>
+          </li>
+          <li>
+            <span>Direction</span>
+            <strong>{review.direction}</strong>
+          </li>
+          <li>
+            <span>Notional</span>
+            <strong>
+              {formatNumber(review.notional_1)} {review.currency_1}
+            </strong>
+          </li>
+          <li>
+            <span>Rate</span>
+            <strong>{review.instrument_details.rate}</strong>
+          </li>
+          <li>
+            <span>Counter leg</span>
+            <strong>
+              {formatNumber(review.notional_2)} {review.currency_2}
+            </strong>
+          </li>
+          <li>
+            <span>Settlement</span>
+            <strong>{review.instrument_details.settlement_date}</strong>
+          </li>
+          <li>
+            <span>Counterparty</span>
+            <strong>{review.counterparty}</strong>
+          </li>
+        </ul>
+        {error && <p className="form__result form__result--error">{error}</p>}
+        <div className="form__actions">
+          <button className="btn btn--ghost" onClick={handleBack} disabled={submitting}>
+            Back
+          </button>
+          <button
+            className="btn btn--primary"
+            onClick={handleConfirm}
+            disabled={submitting}
+          >
+            {submitting ? "Booking…" : "Confirm & Book"}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="panel__body">
       <h2 className="panel__title">New Trade</h2>
-      <form className="form" onSubmit={handleSubmit}>
+      <form className="form" onSubmit={handleReview}>
         <div className="form__row">
           <div className="field">
             <label className="field__label" htmlFor="currency_pair">
@@ -160,7 +236,7 @@ export function NewTradeForm({ onBooked }) {
         )}
 
         <button className="btn btn--primary" type="submit" disabled={submitting}>
-          {submitting ? "Booking…" : "Book Trade"}
+          Review Trade
         </button>
       </form>
     </div>

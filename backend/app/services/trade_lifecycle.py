@@ -77,3 +77,22 @@ async def amend_trade(
             f"trade {trade.trade_id} in state {trade.status.value} cannot be amended"
         )
     return await append_state(db, trade.trade_id, TradeState.AMENDED, changed_by, notes)
+
+
+async def confirm_trade(
+    db: AsyncSession,
+    trade: Trade,
+    changed_by: str = "system",
+    notes: str | None = None,
+) -> TradeStateLog:
+    """Confirm a pending trade: `status` becomes BOOKED and a log entry is appended.
+
+    Raises ``ValueError`` if the trade is not PENDING_CONFIRMATION.
+    """
+    if trade.status != TradeStatus.PENDING_CONFIRMATION:
+        raise ValueError(
+            f"trade {trade.trade_id} in state {trade.status.value} cannot be confirmed"
+        )
+    trade.status = TradeStatus.BOOKED
+    return await append_state(db, trade.trade_id, TradeState.BOOKED, changed_by, notes)
+

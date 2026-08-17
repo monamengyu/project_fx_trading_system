@@ -208,3 +208,30 @@ async def test_amend_404_for_unknown_trade(client):
         "/trades/00000000-0000-0000-0000-000000000000/amend", json={"comment": "x"}
     )
     assert response.status_code == 404
+
+
+
+async def test_confirm_pending_trade(client):
+    created = await _book_trade(client)
+    assert created.status_code == 201
+    trade_id = created.json()["trade_id"]
+
+    response = await client.post(
+        f"/trades/{trade_id}/confirm", json={"comment": "confirmed"}
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "BOOKED"
+
+    history = await client.get(f"/trades/{trade_id}/history")
+    states = [e["state"] for e in history.json()["history"]]
+    assert states == ["PENDING_CONFIRMATION", "BOOKED"]
+    assert history.json()["history"][-1]["notes"] == "confirmed"
+
+
+async def test_confirm_booked_trade_conflict(client):
+    created = await _book_trade(client)
+    trade_id = created.json()["trade_id"]
+    first = await client.post(f"/trades/{trade_id}/confirm", json={})
+    assert first.status_code == 200
+    second = await client.post(f"/trades/{trade_id}/confirm", json={})
+    assert second.status_code == 409

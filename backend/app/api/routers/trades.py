@@ -135,3 +135,21 @@ async def amend_trade(
     await db.commit()
     await db.refresh(trade)
     return trade
+
+
+@router.post("/{trade_id}/confirm", response_model=TradeRead)
+async def confirm_trade(
+    trade_id: uuid.UUID,
+    payload: TradeCancelRequest,
+    db: AsyncSession = Depends(get_db),
+) -> Trade:
+    trade = await db.get(Trade, trade_id)
+    if trade is None:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    try:
+        await trade_lifecycle.confirm_trade(db, trade, notes=payload.comment)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await db.commit()
+    await db.refresh(trade)
+    return trade

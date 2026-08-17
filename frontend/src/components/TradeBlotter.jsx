@@ -23,27 +23,37 @@ export function TradeBlotter({ trades, loading, error, onRefresh }) {
       <table className="blotter">
         <thead>
           <tr>
+            <th>Trade ID</th>
+            <th>Type</th>
             <th>Pair</th>
             <th>Direction</th>
-            <th>Notional</th>
+            <th>Rate</th>
+            <th>Currency 1</th>
+            <th>Notional 1</th>
+            <th>Currency 2</th>
+            <th>Notional 2</th>
+            <th>Settlement</th>
             <th>Counterparty</th>
             <th>Status</th>
-            <th>Trade Date</th>
           </tr>
         </thead>
         <tbody>
           {trades.map((trade) => (
             <tr key={trade.trade_id}>
+              <td className="blotter__id">{trade.trade_id}</td>
+              <td>{trade.instrument_type}</td>
               <td>{trade.currency_pair}</td>
               <td>{trade.direction}</td>
-              <td>
-                {trade.notional_1} {trade.currency_1}
-              </td>
+              <td>{trade.instrument_details?.rate ?? "—"}</td>
+              <td>{trade.currency_1}</td>
+              <td>{trade.notional_1}</td>
+              <td>{trade.currency_2}</td>
+              <td>{trade.notional_2 ?? "—"}</td>
+              <td>{trade.instrument_details?.settlement_date ?? "—"}</td>
               <td>{trade.counterparty}</td>
               <td>
                 <StatusBadge status={trade.status} />
               </td>
-              <td>{trade.trade_date}</td>
             </tr>
           ))}
         </tbody>

@@ -128,3 +128,33 @@ async def test_list_trades_filters_by_status(client):
     body = response.json()
     assert all(t["status"] == "PENDING_CONFIRMATION" for t in body)
     assert trade_id not in [t["trade_id"] for t in body]
+
+
+SETTLEMENT_LATE_PAYLOAD = {
+    **SPOT_PAYLOAD,
+    "instrument_details": {
+        **SPOT_PAYLOAD["instrument_details"],
+        "settlement_date": "2026-08-05",
+    },
+}
+
+
+async def test_list_trades_filters_by_settlement_date(client):
+    early = await _post_trade(client)  # settles 2026-08-01
+    late = await _post_trade(client, SETTLEMENT_LATE_PAYLOAD)  # settles 2026-08-05
+    assert early.status_code == late.status_code == 201
+    early_id = early.json()["trade_id"]
+    late_id = late.json()["trade_id"]
+
+    response = await client.get(
+        "/trades",
+        params={
+            "settlement_date_from": "2026-08-04",
+            "settlement_date_to": "2026-08-31",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    returned_ids = {t["trade_id"] for t in body}
+    assert late_id in returned_ids
+    assert early_id not in returned_ids

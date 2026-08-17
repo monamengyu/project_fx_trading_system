@@ -2,7 +2,7 @@ import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import Date, cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -48,6 +48,8 @@ async def list_trades(
     status: TradeStatus | None = None,
     trade_date_from: date | None = None,
     trade_date_to: date | None = None,
+    settlement_date_from: date | None = None,
+    settlement_date_to: date | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[Trade]:
@@ -63,6 +65,13 @@ async def list_trades(
         query = query.where(Trade.trade_date >= trade_date_from)
     if trade_date_to is not None:
         query = query.where(Trade.trade_date <= trade_date_to)
+    settlement_date = cast(
+        Trade.instrument_details["settlement_date"].astext, Date
+    )
+    if settlement_date_from is not None:
+        query = query.where(settlement_date >= settlement_date_from)
+    if settlement_date_to is not None:
+        query = query.where(settlement_date <= settlement_date_to)
     query = (
         query.order_by(Trade.trade_date.desc(), Trade.trade_id)
         .offset(offset)

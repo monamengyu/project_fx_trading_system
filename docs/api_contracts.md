@@ -135,6 +135,18 @@ Cancel a trade. Allowed from `PENDING_CONFIRMATION` or `BOOKED`. The trade row i
 **Response `404 Not Found`** if `trade_id` doesn't exist
 **Response `409 Conflict`** if the trade is not in a cancellable state (e.g. already `CANCELLED`)
 
+### `POST /trades/{trade_id}/confirm`
+Confirm a pending trade: `status` becomes `BOOKED` and a `BOOKED` entry is appended to the lifecycle log. (This is what moves a trade into a position.)
+
+**Request**
+```json
+{ "comment": "confirmed" }
+```
+
+**Response `200 OK`**: full trade object with `status: "BOOKED"`
+**Response `404 Not Found`** if `trade_id` doesn't exist
+**Response `409 Conflict`** if the trade is not `PENDING_CONFIRMATION`
+
 ### `POST /trades/{trade_id}/amend`
 Amend a booked trade (notional and/or comment). The trade's `status` stays `BOOKED` and an `AMENDED` entry is appended to the lifecycle log.
 

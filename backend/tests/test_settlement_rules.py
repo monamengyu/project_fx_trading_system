@@ -73,3 +73,24 @@ async def test_forward_settlement_beyond_window_ok(client):
     r = await client.post("/trades", json=_payload("FORWARD", add_business_days(TODAY, 5)))
     assert r.status_code == 201
     client.created_trade_ids.append(r.json()["trade_id"])
+
+
+def _next_saturday(start):
+    d = start
+    while True:
+        d += timedelta(days=1)
+        if d.weekday() == 5:  # Saturday
+            return d
+
+
+async def test_spot_settlement_on_weekend_rejected(client):
+    r = await client.post("/trades", json=_payload("SPOT", _next_saturday(TODAY)))
+    assert r.status_code == 422
+
+
+async def test_forward_settlement_on_weekend_rejected(client):
+    # a weekend well beyond the spot window: passes the window rule, fails the
+    # business-day rule
+    settlement = _next_saturday(spot_value_date(TODAY))
+    r = await client.post("/trades", json=_payload("FORWARD", settlement))
+    assert r.status_code == 422

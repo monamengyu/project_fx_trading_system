@@ -6,7 +6,11 @@ from pydantic import BaseModel, ConfigDict, field_serializer, model_validator
 
 from app.models.enums import InstrumentType, CurrencyPair, Direction, Currency, TradeStatus, TradeState
 from app.schemas.instrument_details import InstrumentDetails
-from app.services.business_calendar import effective_trade_date, spot_value_date
+from app.services.business_calendar import (
+    effective_trade_date,
+    is_business_day,
+    spot_value_date,
+)
 
 
 class TradeCreate(BaseModel):
@@ -40,6 +44,8 @@ class TradeCreate(BaseModel):
         trade_date = effective_trade_date(date.today())
         spot = spot_value_date(trade_date)
         settlement = self.instrument_details.settlement_date
+        if not is_business_day(settlement):
+            raise ValueError("settlement_date must be a business day (Mon-Fri)")
         if self.instrument_type == InstrumentType.SPOT:
             if not (trade_date <= settlement <= spot):
                 raise ValueError(

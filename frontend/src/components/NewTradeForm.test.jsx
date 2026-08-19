@@ -141,11 +141,37 @@ describe("NewTradeForm", () => {
     expect(bookTrade).not.toHaveBeenCalled();
   });
 
+  it("rejects a settlement date on a weekend", async () => {
+    const user = userEvent.setup();
+    render(<NewTradeForm onBooked={vi.fn()} />);
+
+    // a Saturday strictly after the spot value date
+    const start = addBusinessDays(new Date(), 3);
+    const d = new Date(start);
+    while (d.getDay() !== 6) d.setDate(d.getDate() + 1);
+    const saturday = toISODate(d);
+
+    setType("FORWARD");
+    setSettlement(saturday);
+    await reviewDefault(user);
+
+    expect(screen.getByText(/business day/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Confirm Trade" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("rejects a SPOT settlement before today", async () => {
     const user = userEvent.setup();
     render(<NewTradeForm onBooked={vi.fn()} />);
 
-    setSettlement("2000-01-01");
+    // a past business day (guaranteed weekday, before today)
+    const past = new Date();
+    past.setDate(past.getDate() - 3);
+    while (past.getDay() === 0 || past.getDay() === 6) {
+      past.setDate(past.getDate() - 1);
+    }
+    setSettlement(toISODate(past));
     await reviewDefault(user);
 
     expect(screen.getByText(/cannot settle before/i)).toBeInTheDocument();

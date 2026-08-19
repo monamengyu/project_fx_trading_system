@@ -20,6 +20,11 @@ export function toISODate(d) {
   return `${y}-${m}-${day}`;
 }
 
+export function isBusinessDay(d) {
+  const day = d.getDay();
+  return day !== 0 && day !== 6; // Mon-Fri
+}
+
 export function nextBusinessDay(d) {
   const date = new Date(d);
   while (date.getDay() === 0 || date.getDay() === 6) {

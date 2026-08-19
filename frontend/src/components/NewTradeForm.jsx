@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useBookTrade } from "../hooks/useBookTrade.js";
 import { useMarketRates } from "../hooks/useMarketRates.js";
-import { spotValueDate, toISODate, todayISO } from "../utils/date.js";
+import { isBusinessDay, spotValueDate, toISODate, todayISO } from "../utils/date.js";
 
 const PAIRS = ["EURUSD", "GBPUSD", "USDJPY"];
 const DIRECTIONS = ["BUY", "SELL"];
@@ -56,6 +56,9 @@ function formatRate(value) {
 function validate(form) {
   const settlement = form.settlement_date;
   if (!settlement) return "Settlement date is required.";
+  if (!isBusinessDay(new Date(`${settlement}T00:00:00`))) {
+    return "Settlement date must be a business day (Mon-Fri).";
+  }
   if (form.instrument_type === "SPOT") {
     if (settlement < TODAY) return `SPOT cannot settle before ${TODAY}.`;
     if (settlement > SPOT_DATE) {

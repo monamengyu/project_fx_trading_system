@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -11,6 +12,7 @@ from app.models.enums import TradeState, TradeStatus
 from app.models.trade import Trade
 from app.models.trade_state import TradeStateLog
 from app.services import trade_lifecycle
+from app.services.business_calendar import spot_value_date
 
 
 @pytest.fixture
@@ -41,7 +43,7 @@ BUY_EURUSD = {
     "instrument_details": {
         "instrument_type": "SPOT",
         "rate": 1.085,
-        "settlement_date": "2026-08-01",
+        "settlement_date": spot_value_date(date.today()).isoformat(),
     },
 }
 

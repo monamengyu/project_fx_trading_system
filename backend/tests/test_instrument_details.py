@@ -1,7 +1,10 @@
+from datetime import date
+
 import pytest
 from pydantic import ValidationError
 
 from app.schemas.trade import TradeCreate
+from app.services.business_calendar import spot_value_date
 
 
 def test_spot_trade_valid():
@@ -13,7 +16,11 @@ def test_spot_trade_valid():
         notional_1=1000000,
         currency_2="USD",
         counterparty="BANK_A",
-        instrument_details={"instrument_type": "SPOT", "rate": 1.085, "settlement_date": "2026-08-01"},
+        instrument_details={
+            "instrument_type": "SPOT",
+            "rate": 1.085,
+            "settlement_date": spot_value_date(date.today()).isoformat(),
+        },
     )
     assert trade.instrument_details.rate == 1.085
 

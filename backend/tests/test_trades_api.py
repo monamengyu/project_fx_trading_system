@@ -1,3 +1,6 @@
+from datetime import date, timedelta
+from unittest.mock import patch
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete
@@ -6,6 +9,11 @@ from app.db.session import AsyncSessionLocal
 from app.main import app
 from app.models.trade import Trade
 from app.models.trade_state import TradeStateLog
+from app.services.business_calendar import (
+    add_business_days,
+    effective_trade_date,
+    spot_value_date,
+)
 
 
 @pytest.fixture
@@ -33,7 +41,11 @@ SPOT_PAYLOAD = {
     "notional_1": 1000000,
     "currency_2": "USD",
     "counterparty": "BANK_A",
-    "instrument_details": {"instrument_type": "SPOT", "rate": 1.085, "settlement_date": "2026-08-01"},
+    "instrument_details": {
+        "instrument_type": "SPOT",
+        "rate": 1.085,
+        "settlement_date": spot_value_date(date.today()).isoformat(),
+    },
 }
 
 
@@ -90,7 +102,7 @@ GBPUSD_PAYLOAD = {
     "instrument_details": {
         "instrument_type": "SPOT",
         "rate": 1.27,
-        "settlement_date": "2026-08-01",
+        "settlement_date": spot_value_date(date.today()).isoformat(),
     },
 }
 
@@ -118,6 +130,32 @@ async def test_list_trades_paginates(client):
     assert len(response.json()) == 2
 
 
+async def test_trade_date_rolls_forward_on_weekend(client):
+    # next Saturday from the real today
+    d = date.today()
+    saturday = d + timedelta(days=(5 - d.weekday()) % 7)
+    monday = saturday + timedelta(days=2)
+
+    effective = effective_trade_date(saturday)
+    payload = {
+        **SPOT_PAYLOAD,
+        "instrument_details": {
+            **SPOT_PAYLOAD["instrument_details"],
+            "settlement_date": spot_value_date(effective).isoformat(),
+        },
+    }
+    with patch("app.api.routers.trades.date") as mock_router_date, patch(
+        "app.schemas.trade.date"
+    ) as mock_schema_date:
+        mock_router_date.today.return_value = saturday
+        mock_schema_date.today.return_value = saturday
+        response = await client.post("/trades", json=payload)
+
+    assert response.status_code == 201
+    assert response.json()["trade_date"] == monday.isoformat()
+    client.created_trade_ids.append(response.json()["trade_id"])
+
+
 async def test_list_trades_filters_by_status(client):
     created = await _post_trade(client)
     trade_id = created.json()["trade_id"]
@@ -130,18 +168,25 @@ async def test_list_trades_filters_by_status(client):
     assert trade_id not in [t["trade_id"] for t in body]
 
 
-SETTLEMENT_LATE_PAYLOAD = {
-    **SPOT_PAYLOAD,
+FORWARD_FILTER_PAYLOAD = {
+    "instrument_type": "FORWARD",
+    "currency_pair": "EURUSD",
+    "direction": "BUY",
+    "currency_1": "EUR",
+    "notional_1": 1000000,
+    "currency_2": "USD",
+    "counterparty": "BANK_A",
     "instrument_details": {
-        **SPOT_PAYLOAD["instrument_details"],
-        "settlement_date": "2026-08-05",
+        "instrument_type": "FORWARD",
+        "rate": 1.09,
+        "settlement_date": add_business_days(date.today(), 15).isoformat(),
     },
 }
 
 
 async def test_list_trades_filters_by_settlement_date(client):
-    early = await _post_trade(client)  # settles 2026-08-01
-    late = await _post_trade(client, SETTLEMENT_LATE_PAYLOAD)  # settles 2026-08-05
+    early = await _post_trade(client)  # SPOT: settles at the spot value date
+    late = await _post_trade(client, FORWARD_FILTER_PAYLOAD)  # FORWARD: settles ~T+15bd
     assert early.status_code == late.status_code == 201
     early_id = early.json()["trade_id"]
     late_id = late.json()["trade_id"]
@@ -149,8 +194,8 @@ async def test_list_trades_filters_by_settlement_date(client):
     response = await client.get(
         "/trades",
         params={
-            "settlement_date_from": "2026-08-04",
-            "settlement_date_to": "2026-08-31",
+            "settlement_date_from": add_business_days(date.today(), 3).isoformat(),
+            "settlement_date_to": add_business_days(date.today(), 30).isoformat(),
         },
     )
     assert response.status_code == 200

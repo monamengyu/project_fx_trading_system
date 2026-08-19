@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete
@@ -6,6 +8,7 @@ from app.db.session import AsyncSessionLocal
 from app.main import app
 from app.models.trade import Trade
 from app.models.trade_state import TradeStateLog
+from app.services.business_calendar import add_business_days
 
 
 @pytest.fixture
@@ -37,7 +40,7 @@ FORWARD_PAYLOAD = {
     "instrument_details": {
         "instrument_type": "FORWARD",
         "rate": 1.092,
-        "settlement_date": "2026-11-01",
+        "settlement_date": add_business_days(date.today(), 20).isoformat(),
     },
 }
 
@@ -50,7 +53,10 @@ async def test_forward_booking_success(client):
     assert body["status"] == "PENDING_CONFIRMATION"
     assert body["instrument_details"]["instrument_type"] == "FORWARD"
     assert body["instrument_details"]["rate"] == 1.092
-    assert body["instrument_details"]["settlement_date"] == "2026-11-01"
+    assert (
+        body["instrument_details"]["settlement_date"]
+        == FORWARD_PAYLOAD["instrument_details"]["settlement_date"]
+    )
     client.created_trade_ids.append(body["trade_id"])
 
 
@@ -65,7 +71,7 @@ async def test_forward_booking_persists(client):
     details = fetched.json()["instrument_details"]
     assert details["instrument_type"] == "FORWARD"
     assert details["rate"] == 1.092
-    assert details["settlement_date"] == "2026-11-01"
+    assert details["settlement_date"] == FORWARD_PAYLOAD["instrument_details"]["settlement_date"]
 
 
 async def test_forward_booking_writes_initial_state_log(client):

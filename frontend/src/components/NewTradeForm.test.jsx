@@ -2,14 +2,26 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { NewTradeForm } from "./NewTradeForm.jsx";
 import userEvent from "@testing-library/user-event";
 import { bookTrade } from "../services/trades.js";
+import { addBusinessDays, toISODate } from "../utils/date.js";
 
 vi.mock("../services/trades.js", () => ({ bookTrade: vi.fn() }));
 
-async function fillAndReview(user) {
-  fireEvent.change(screen.getByLabelText("Settlement Date"), {
-    target: { value: "2026-08-19" },
-  });
+const FORWARD_SETTLEMENT = toISODate(addBusinessDays(new Date(), 10));
+
+async function reviewDefault(user) {
   await user.click(screen.getByRole("button", { name: "Review Trade" }));
+}
+
+function setType(type) {
+  fireEvent.change(screen.getByLabelText("Instrument Type"), {
+    target: { value: type },
+  });
+}
+
+function setSettlement(date) {
+  fireEvent.change(screen.getByLabelText("Settlement Date"), {
+    target: { value: date },
+  });
 }
 
 describe("NewTradeForm", () => {
@@ -17,11 +29,11 @@ describe("NewTradeForm", () => {
     bookTrade.mockReset();
   });
 
-  it("shows a confirmation review before booking", async () => {
+  it("shows a confirmation review before booking (SPOT)", async () => {
     const user = userEvent.setup();
     render(<NewTradeForm onBooked={vi.fn()} />);
 
-    await fillAndReview(user);
+    await reviewDefault(user);
 
     expect(screen.getByRole("heading", { name: "Confirm Trade" })).toBeInTheDocument();
     expect(screen.getByText("EURUSD")).toBeInTheDocument();
@@ -34,11 +46,12 @@ describe("NewTradeForm", () => {
     const user = userEvent.setup();
     render(<NewTradeForm onBooked={onBooked} />);
 
-    await fillAndReview(user);
+    await reviewDefault(user);
     await user.click(screen.getByRole("button", { name: "Confirm & Book" }));
 
     expect(bookTrade).toHaveBeenCalledTimes(1);
     expect(bookTrade.mock.calls[0][0].notional_2).toBe(1085000);
+    expect(bookTrade.mock.calls[0][0].instrument_type).toBe("SPOT");
     expect(onBooked).toHaveBeenCalledTimes(1);
   });
 
@@ -46,10 +59,62 @@ describe("NewTradeForm", () => {
     const user = userEvent.setup();
     render(<NewTradeForm onBooked={vi.fn()} />);
 
-    await fillAndReview(user);
+    await reviewDefault(user);
     await user.click(screen.getByRole("button", { name: "Back" }));
 
     expect(screen.getByRole("heading", { name: "New Trade" })).toBeInTheDocument();
     expect(bookTrade).not.toHaveBeenCalled();
+  });
+
+  it("books a FORWARD trade with a later settlement date", async () => {
+    bookTrade.mockResolvedValue({ trade_id: "2", status: "PENDING_CONFIRMATION" });
+    const onBooked = vi.fn();
+    const user = userEvent.setup();
+    render(<NewTradeForm onBooked={onBooked} />);
+
+    setType("FORWARD");
+    setSettlement(FORWARD_SETTLEMENT);
+    await reviewDefault(user);
+
+    expect(screen.getByRole("heading", { name: "Confirm Trade" })).toBeInTheDocument();
+    expect(screen.getByText("FORWARD")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Confirm & Book" }));
+    const payload = bookTrade.mock.calls[0][0];
+    expect(payload.instrument_type).toBe("FORWARD");
+    expect(payload.instrument_details.instrument_type).toBe("FORWARD");
+    expect(payload.instrument_details.settlement_date).toBe(FORWARD_SETTLEMENT);
+    expect(onBooked).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a SPOT settlement beyond the spot window and offers FORWARD", async () => {
+    const user = userEvent.setup();
+    render(<NewTradeForm onBooked={vi.fn()} />);
+
+    setSettlement(FORWARD_SETTLEMENT);
+    await reviewDefault(user);
+
+    expect(screen.getByText(/use FORWARD/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Confirm Trade" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to FORWARD" }));
+    await reviewDefault(user);
+    expect(screen.getByRole("heading", { name: "Confirm Trade" })).toBeInTheDocument();
+    expect(bookTrade).not.toHaveBeenCalled();
+  });
+
+  it("rejects a SPOT settlement before today", async () => {
+    const user = userEvent.setup();
+    render(<NewTradeForm onBooked={vi.fn()} />);
+
+    setSettlement("2000-01-01");
+    await reviewDefault(user);
+
+    expect(screen.getByText(/cannot settle before/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Confirm Trade" }),
+    ).not.toBeInTheDocument();
   });
 });

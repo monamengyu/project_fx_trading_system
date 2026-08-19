@@ -94,6 +94,23 @@ describe("NewTradeForm", () => {
     expect(screen.getByLabelText("Rate").value).toBe("1.2700");
   });
 
+  it("defaults the rate to the market rate when switching to FORWARD", async () => {
+    render(<NewTradeForm onBooked={vi.fn()} />);
+    setType("FORWARD");
+    expect(screen.getByLabelText("Rate").value).toBe("1.0850");
+  });
+
+  it("re-defaults the rate to the market rate on type switch after a manual edit", async () => {
+    render(<NewTradeForm onBooked={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Rate"), {
+      target: { value: "1.9999" },
+    });
+    expect(screen.getByLabelText("Rate").value).toBe("1.9999");
+
+    setType("FORWARD");
+    expect(screen.getByLabelText("Rate").value).toBe("1.0850");
+  });
+
   it("keeps a manually entered rate", async () => {
     render(<NewTradeForm onBooked={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("Rate"), {

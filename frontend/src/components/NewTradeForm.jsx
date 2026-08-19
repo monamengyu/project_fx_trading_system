@@ -108,6 +108,12 @@ export function NewTradeForm({ onBooked }) {
     setFormError(null);
   }
 
+  function handleTypeChange(value) {
+    setForm((prev) => ({ ...prev, instrument_type: value }));
+    setRateTouched(false); // re-default to the market rate (SPOT or FORWARD)
+    setFormError(null);
+  }
+
   function handleRateChange(value) {
     setForm((prev) => ({ ...prev, rate: value }));
     setRateTouched(true); // don't overwrite a manually entered rate
@@ -213,7 +219,7 @@ export function NewTradeForm({ onBooked }) {
               id="instrument_type"
               className="field__select"
               value={form.instrument_type}
-              onChange={(e) => update("instrument_type", e.target.value)}
+              onChange={(e) => handleTypeChange(e.target.value)}
             >
               {INSTRUMENT_TYPES.map((type) => (
                 <option key={type} value={type}>
@@ -335,7 +341,7 @@ export function NewTradeForm({ onBooked }) {
               <button
                 type="button"
                 className="btn btn--ghost form__switch"
-                onClick={() => update("instrument_type", suggest)}
+                onClick={() => handleTypeChange(suggest)}
               >
                 Switch to {suggest}
               </button>

@@ -6,6 +6,21 @@ import { addBusinessDays, toISODate } from "../utils/date.js";
 
 vi.mock("../services/trades.js", () => ({ bookTrade: vi.fn() }));
 
+const mockRates = {
+  EURUSD: { pair: "EURUSD", rate: 1.085, as_of: "2026-08-19" },
+  GBPUSD: { pair: "GBPUSD", rate: 1.27, as_of: "2026-08-19" },
+  USDJPY: { pair: "USDJPY", rate: 150.12, as_of: "2026-08-19" },
+};
+
+vi.mock("../hooks/useMarketRates.js", () => ({
+  useMarketRates: () => ({
+    rates: mockRates,
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+  }),
+}));
+
 const FORWARD_SETTLEMENT = toISODate(addBusinessDays(new Date(), 10));
 
 async function reviewDefault(user) {
@@ -64,6 +79,27 @@ describe("NewTradeForm", () => {
 
     expect(screen.getByRole("heading", { name: "New Trade" })).toBeInTheDocument();
     expect(bookTrade).not.toHaveBeenCalled();
+  });
+
+  it("defaults the rate to the market rate for the selected pair", async () => {
+    render(<NewTradeForm onBooked={vi.fn()} />);
+    expect(screen.getByLabelText("Rate").value).toBe("1.0850");
+  });
+
+  it("updates the rate to the new pair's market rate on pair change", async () => {
+    render(<NewTradeForm onBooked={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Currency Pair"), {
+      target: { value: "GBPUSD" },
+    });
+    expect(screen.getByLabelText("Rate").value).toBe("1.2700");
+  });
+
+  it("keeps a manually entered rate", async () => {
+    render(<NewTradeForm onBooked={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Rate"), {
+      target: { value: "1.9999" },
+    });
+    expect(screen.getByLabelText("Rate").value).toBe("1.9999");
   });
 
   it("books a FORWARD trade with a later settlement date", async () => {

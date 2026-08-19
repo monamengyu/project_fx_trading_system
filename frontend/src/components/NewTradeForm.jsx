@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useBookTrade } from "../hooks/useBookTrade.js";
+import { useMarketRates } from "../hooks/useMarketRates.js";
 import { spotValueDate, toISODate, todayISO } from "../utils/date.js";
 
 const PAIRS = ["EURUSD", "GBPUSD", "USDJPY"];
@@ -48,6 +49,10 @@ function formatNumber(value) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value);
 }
 
+function formatRate(value) {
+  return Number(value).toFixed(4);
+}
+
 function validate(form) {
   const settlement = form.settlement_date;
   if (!settlement) return "Settlement date is required.";
@@ -75,10 +80,34 @@ export function NewTradeForm({ onBooked }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [review, setReview] = useState(null); // payload awaiting confirmation
   const [formError, setFormError] = useState(null);
+  const [rateTouched, setRateTouched] = useState(false);
   const { submit, submitting, result, error } = useBookTrade();
+  const { rates } = useMarketRates();
+
+  // Default the rate to the latest market rate for the selected pair, unless
+  // the user has manually overridden it.
+  useEffect(() => {
+    const entry = rates[form.currency_pair];
+    if (entry?.rate != null && !rateTouched) {
+      const market = formatRate(entry.rate);
+      setForm((prev) => (prev.rate !== market ? { ...prev, rate: market } : prev));
+    }
+  }, [form.currency_pair, rates, rateTouched]);
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
+    setFormError(null);
+  }
+
+  function handlePairChange(value) {
+    setForm((prev) => ({ ...prev, currency_pair: value }));
+    setRateTouched(false); // re-default to the new pair's market rate
+    setFormError(null);
+  }
+
+  function handleRateChange(value) {
+    setForm((prev) => ({ ...prev, rate: value }));
+    setRateTouched(true); // don't overwrite a manually entered rate
     setFormError(null);
   }
 
@@ -101,6 +130,7 @@ export function NewTradeForm({ onBooked }) {
     const trade = await submit(review);
     if (trade) {
       setForm(EMPTY_FORM);
+      setRateTouched(false);
       setReview(null);
       onBooked?.(trade);
     }
@@ -197,7 +227,7 @@ export function NewTradeForm({ onBooked }) {
               id="currency_pair"
               className="field__select"
               value={form.currency_pair}
-              onChange={(e) => update("currency_pair", e.target.value)}
+              onChange={(e) => handlePairChange(e.target.value)}
             >
               {PAIRS.map((pair) => (
                 <option key={pair} value={pair}>
@@ -272,7 +302,7 @@ export function NewTradeForm({ onBooked }) {
               min="0"
               step="0.0001"
               value={form.rate}
-              onChange={(e) => update("rate", e.target.value)}
+              onChange={(e) => handleRateChange(e.target.value)}
               required
             />
           </div>
@@ -291,7 +321,7 @@ export function NewTradeForm({ onBooked }) {
             required
           />
           <p className="field__hint">
-            SPOT settles {TODAY}–{SPOT_DATE}; later dates are FORWARD.
+            SPOT settles by {SPOT_DATE}; later dates are FORWARD.
           </p>
         </div>
 

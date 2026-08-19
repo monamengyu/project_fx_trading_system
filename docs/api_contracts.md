@@ -79,7 +79,7 @@ Book a new trade directly (structured form entry, not via NL parsing).
 
 `trade_date` and `status` are server-assigned — `trade_date` defaults to today (rolled forward to the next business day if today is a weekend, so `trade_date` is always a business day), `status` starts at `PENDING_CONFIRMATION`. Neither can be set by the client on create.
 
-**Settlement-date rule**: SPOT trades must settle between the trade date and the spot value date (trade date + 2 business days, weekends excluded). Settlement dates beyond the spot value date are only allowed for FORWARD trades. Violations return `422 Unprocessable Entity`.
+**Settlement-date rule**: settlement dates must be business days (Mon-Fri, weekends excluded). SPOT trades must settle between the trade date and the spot value date (trade date + 2 business days). Settlement dates beyond the spot value date are only allowed for FORWARD trades. Violations return `422 Unprocessable Entity`.
 
 ### `GET /trades`
 List trades (the blotter) with optional filters and offset/limit pagination. All query params are optional.

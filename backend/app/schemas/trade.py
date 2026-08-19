@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, field_serializer, model_validator
 
 from app.models.enums import InstrumentType, CurrencyPair, Direction, Currency, TradeStatus, TradeState
 from app.schemas.instrument_details import InstrumentDetails
+from app.services.business_calendar import effective_trade_date, spot_value_date
 
 
 class TradeCreate(BaseModel):
@@ -27,6 +28,30 @@ class TradeCreate(BaseModel):
                 f"instrument_details.instrument_type ({self.instrument_details.instrument_type}) "
                 f"does not match instrument_type ({self.instrument_type.value})"
             )
+        return self
+
+    @model_validator(mode="after")
+    def check_settlement_within_spot_window(self):
+        # trade_date is server-assigned at booking time to the effective trade
+        # date (today, rolled forward to a business day), so the spot window is
+        # anchored on the same date.
+        if self.instrument_type == InstrumentType.OPTION:
+            return self  # options use delivery_date, not settlement_date
+        trade_date = effective_trade_date(date.today())
+        spot = spot_value_date(trade_date)
+        settlement = self.instrument_details.settlement_date
+        if self.instrument_type == InstrumentType.SPOT:
+            if not (trade_date <= settlement <= spot):
+                raise ValueError(
+                    f"SPOT settlement_date must be between {trade_date} and {spot} "
+                    f"(trade date + 2 business days); use FORWARD for later dates"
+                )
+        else:  # FORWARD
+            if settlement <= spot:
+                raise ValueError(
+                    f"FORWARD settlement_date must be after {spot} "
+                    f"(trade date + 2 business days)"
+                )
         return self
 
 

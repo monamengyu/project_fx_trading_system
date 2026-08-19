@@ -17,6 +17,7 @@ from app.schemas.trade import (
     TradeRead,
 )
 from app.services import trade_lifecycle
+from app.services.business_calendar import effective_trade_date
 
 router = APIRouter(prefix="/trades", tags=["trades"])
 
@@ -26,7 +27,8 @@ async def create_trade(payload: TradeCreate, db: AsyncSession = Depends(get_db))
     trade = Trade(
         **payload.model_dump(exclude={"instrument_details"}),  # Unpack the payload excluding instrument_details straight into Trade()
         instrument_details=payload.instrument_details.model_dump(mode="json"),
-        trade_date=date.today(),
+        # roll weekends forward so trade_date is always a business day
+        trade_date=effective_trade_date(date.today()),
         status=TradeStatus.PENDING_CONFIRMATION,
     )
     db.add(trade)

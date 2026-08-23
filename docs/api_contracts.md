@@ -292,3 +292,41 @@ Streams live mark-to-market (MTM) position updates.
 ```json
 { "trade_id": "uuid", "mtm_value": 1250.50, "as_of": "2026-07-29T10:15:05Z" }
 ```
+
+## Natural language trade entry
+
+### `GET /nl-parse/models`
+List the models selectable for NL trade parsing. The `rule-based` baseline is
+always present; LLM models (OpenAI / Anthropic / Ollama) are only listed when
+their API key is configured.
+
+**Response `200 OK`**: array of `{ "id", "label", "kind" }`.
+
+### `POST /nl-parse`
+Parse a plain-English trade instruction into a validated trade payload (same
+shape as `POST /trades`), ready for the user to confirm before booking. No
+trade is persisted by this endpoint.
+
+**Request**
+```json
+{ "text": "Buy 1 million euros against dollars, spot at 1.085", "model": "rule-based" }
+```
+
+**Response `200 OK`**
+```json
+{
+  "model": "rule-based",
+  "draft": { "...": "normalised NL interpretation" },
+  "trade": { "...": "validated TradeCreate payload (confirmed before booking)" },
+  "raw": { "...": "raw model output, for model evaluation" }
+}
+```
+
+**Response `400 Bad Request`** if `model` is unknown
+**Response `422 Unprocessable Entity`** if the text cannot be parsed into a valid trade
+**Response `502 Bad Gateway`** if the selected LLM provider fails
+
+Models: `rule-based` (baseline, always), `openai-gpt-4o-mini`, `openai-gpt-4o`,
+one `anthropic-<model>` per entry in the `ANTHROPIC_MODELS` env list (JSON), and
+`ollama-llama3` — LLM entries appear only when their API key is configured. Missing rates are resolved from the live market rate; missing
+option fields get defaults (premium 0, delivery = expiry, EUROPEAN style).

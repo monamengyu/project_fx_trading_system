@@ -79,6 +79,8 @@ class OpenAICompatClient:
                 response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise RuntimeError(_provider_error(exc)) from exc
+        except httpx.TransportError as exc:
+            raise RuntimeError(f"cannot reach provider at {self.base_url}: {exc}") from exc
         content = response.json()["choices"][0]["message"]["content"]
         return json.loads(content)
 
@@ -114,6 +116,8 @@ class AnthropicClient:
                 response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise RuntimeError(_provider_error(exc)) from exc
+        except httpx.TransportError as exc:
+            raise RuntimeError("cannot reach Anthropic API: {exc}") from exc
         text = response.json()["content"][0]["text"]
         return json.loads(_strip_code_fences(text))
 

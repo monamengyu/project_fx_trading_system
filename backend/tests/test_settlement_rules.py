@@ -8,7 +8,11 @@ from app.db.session import AsyncSessionLocal
 from app.main import app
 from app.models.trade import Trade
 from app.models.trade_state import TradeStateLog
-from app.services.business_calendar import add_business_days, spot_value_date
+from app.services.business_calendar import (
+    add_business_days,
+    effective_trade_date,
+    spot_value_date,
+)
 
 
 @pytest.fixture
@@ -55,7 +59,8 @@ async def test_spot_settlement_at_spot_value_date_ok(client):
 
 
 async def test_spot_settlement_beyond_window_rejected(client):
-    r = await client.post("/trades", json=_payload("SPOT", add_business_days(TODAY, 3)))
+    beyond_spot = add_business_days(effective_trade_date(TODAY), 3)
+    r = await client.post("/trades", json=_payload("SPOT", beyond_spot))
     assert r.status_code == 422
 
 

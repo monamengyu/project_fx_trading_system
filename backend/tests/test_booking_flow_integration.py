@@ -18,7 +18,11 @@ from app.db.session import AsyncSessionLocal
 from app.main import app
 from app.models.trade import Trade
 from app.models.trade_state import TradeStateLog
-from app.services.business_calendar import add_business_days, spot_value_date
+from app.services.business_calendar import (
+    add_business_days,
+    effective_trade_date,
+    spot_value_date,
+)
 
 
 @pytest.fixture
@@ -127,7 +131,7 @@ async def test_full_spot_booking_lifecycle(client):
     trade = await _book_trade(client, _spot_payload())
     trade_id = trade["trade_id"]
     assert trade["status"] == "PENDING_CONFIRMATION"
-    assert trade["trade_date"] == date.today().isoformat()
+    assert trade["trade_date"] == effective_trade_date(date.today()).isoformat()
     assert _states(await _history(client, trade_id)) == ["PENDING_CONFIRMATION"]
 
     # 2. Blotter lists the new trade
@@ -221,9 +225,10 @@ async def test_booking_rejects_weekend_settlement(client):
 
 async def test_booking_rejects_out_of_window_settlement(client):
     # SPOT beyond the spot value date must be booked as FORWARD
+    beyond_spot = add_business_days(effective_trade_date(date.today()), 3)
     response = await client.post(
         "/trades",
-        json=_payload_with_settlement("SPOT", add_business_days(date.today(), 3)),
+        json=_payload_with_settlement("SPOT", beyond_spot),
     )
     assert response.status_code == 422
     # FORWARD settling at the spot value date is not a forward

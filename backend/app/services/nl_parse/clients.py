@@ -13,6 +13,20 @@ from app.core.config import settings
 from app.services.nl_parse.models import ModelInfo
 
 
+def _provider_error(exc: httpx.HTTPStatusError) -> str:
+    """Build a human-readable message from a provider error response."""
+    try:
+        body = exc.response.json()
+        message = (
+            body.get("error", {}).get("message", "")
+            or body.get("message", "")
+            or exc.response.text
+        )
+    except Exception:
+        message = exc.response.text
+    return f"LLM provider error ({exc.response.status_code}): {message}"
+
+
 def _strip_code_fences(text: str) -> str:
     text = text.strip()
     if text.startswith("```"):
@@ -55,13 +69,16 @@ class OpenAICompatClient:
             "response_format": {"type": "json_object"},
             "temperature": 0,
         }
-        async with httpx.AsyncClient(timeout=settings.llm_request_timeout_seconds) as client:
-            response = await client.post(
-                f"{self.base_url}/chat/completions",
-                json=payload,
-                headers=headers,
-            )
-            response.raise_for_status()
+        try:
+            async with httpx.AsyncClient(timeout=settings.llm_request_timeout_seconds) as client:
+                response = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    json=payload,
+                    headers=headers,
+                )
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError(_provider_error(exc)) from exc
         content = response.json()["choices"][0]["message"]["content"]
         return json.loads(content)
 
@@ -87,13 +104,16 @@ class AnthropicClient:
             "system": system,
             "messages": [{"role": "user", "content": user}],
         }
-        async with httpx.AsyncClient(timeout=settings.llm_request_timeout_seconds) as client:
-            response = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                json=payload,
-                headers=headers,
-            )
-            response.raise_for_status()
+        try:
+            async with httpx.AsyncClient(timeout=settings.llm_request_timeout_seconds) as client:
+                response = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    json=payload,
+                    headers=headers,
+                )
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError(_provider_error(exc)) from exc
         text = response.json()["content"][0]["text"]
         return json.loads(_strip_code_fences(text))
 

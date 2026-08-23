@@ -2,6 +2,7 @@ import { Header } from "./components/Header.jsx";
 import { Layout } from "./components/Layout.jsx";
 import { MarketRatesPanel } from "./components/MarketRatesPanel.jsx";
 import { NewTradeForm } from "./components/NewTradeForm.jsx";
+import { NlTradeEntry } from "./components/NlTradeEntry.jsx";
 import { PositionsPanel } from "./components/PositionsPanel.jsx";
 import { TradeBlotter } from "./components/TradeBlotter.jsx";
 import { useTrades } from "./hooks/useTrades.js";
@@ -16,7 +17,7 @@ export default function App() {
         topLeft={<MarketRatesPanel />}
         topCenter={<PositionsPanel />}
         topRight={<NewTradeForm onBooked={refresh} />}
-        bottom={
+        bottomLeft={
           <TradeBlotter
             trades={trades}
             loading={loading}
@@ -26,6 +27,7 @@ export default function App() {
             setFilters={setFilters}
           />
         }
+        bottomRight={<NlTradeEntry onBooked={refresh} />}
       />
     </div>
   );

@@ -122,7 +122,20 @@ body {
 .layout__bottom {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  display: flex;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.layout__bottom-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.layout__bottom-side {
+  flex: 0 0 360px;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .panel {
@@ -551,4 +564,32 @@ body {
   margin-left: 8px;
   padding: 2px 8px;
   font-size: 12px;
+}
+
+/* --- Natural-language trade entry  -------------------------------- */
+
+.nl-entry {
+  padding: 12px 16px;
+}
+
+.nl-entry .form--row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.nl-entry .nl-entry__text {
+  flex: 1 1 320px;
+}
+
+.nl-entry textarea.field__input {
+  resize: vertical;
+  font-family: var(--font);
+}
+
+.badge--info {
+  background: rgba(56, 132, 255, 0.15);
+  color: #7fb0ff;
+  border: 1px solid rgba(56, 132, 255, 0.4);
 }

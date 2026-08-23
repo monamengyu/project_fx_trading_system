@@ -15,6 +15,11 @@ vi.mock("./hooks/useTrades.js", () => ({
 vi.mock("./hooks/useMarketRates.js", () => ({
   useMarketRates: () => ({ rates: {}, loading: false, error: null, refresh: vi.fn() }),
 }));
+vi.mock("./services/nlParse.js", () => ({
+  fetchParseModels: vi.fn().mockResolvedValue([]),
+  parseTrade: vi.fn(),
+}));
+
 vi.mock("./hooks/usePositions.js", () => ({
   usePositions: () => ({
     positions: [],
@@ -32,5 +37,8 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Trade Blotter" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "New Trade" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Positions" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Natural Language Trade" }),
+    ).toBeInTheDocument();
   });
 });

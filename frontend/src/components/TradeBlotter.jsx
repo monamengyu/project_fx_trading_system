@@ -166,12 +166,20 @@ export function TradeBlotter({
               <td>{trade.instrument_type}</td>
               <td>{trade.currency_pair}</td>
               <td>{trade.direction}</td>
-              <td>{trade.instrument_details?.rate ?? "—"}</td>
+              <td>
+                {trade.instrument_details?.strike_rate ??
+                  trade.instrument_details?.rate ??
+                  "—"}
+              </td>
               <td>{trade.currency_1}</td>
               <td>{trade.notional_1}</td>
               <td>{trade.currency_2}</td>
               <td>{trade.notional_2 ?? "—"}</td>
-              <td>{trade.instrument_details?.settlement_date ?? "—"}</td>
+              <td>
+                {trade.instrument_details?.expiry_date ??
+                  trade.instrument_details?.settlement_date ??
+                  "—"}
+              </td>
               <td>{trade.counterparty}</td>
               <td>
                 <StatusBadge status={trade.status} />

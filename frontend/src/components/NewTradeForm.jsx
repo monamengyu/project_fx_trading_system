@@ -1,17 +1,39 @@
 import { useEffect, useState } from "react";
 import { useBookTrade } from "../hooks/useBookTrade.js";
 import { useMarketRates } from "../hooks/useMarketRates.js";
-import { isBusinessDay, spotValueDate, toISODate, todayISO } from "../utils/date.js";
+import {
+  addBusinessDays,
+  isBusinessDay,
+  spotValueDate,
+  toISODate,
+  todayISO,
+} from "../utils/date.js";
 
 const PAIRS = ["EURUSD", "GBPUSD", "USDJPY"];
 const DIRECTIONS = ["BUY", "SELL"];
 const COUNTERPARTIES = ["BANK_A", "BANK_B", "BANK_C"];
-const INSTRUMENT_TYPES = ["SPOT", "FORWARD"];
+const INSTRUMENT_TYPES = ["SPOT", "FORWARD", "OPTION"];
+const OPTION_TYPES = ["CALL", "PUT"];
+const EXERCISE_STYLES = ["EUROPEAN", "AMERICAN"];
+const PREMIUM_CURRENCIES = ["USD", "EUR", "GBP", "JPY"];
 
 // Today is always a business day (weekends roll forward); the spot value
-// date is that date + 2 business days.
+// date is that date + 2 business days. Default option expiry is ~1 month out
+// and delivery defaults to expiry + 2 business days.
 const TODAY = todayISO();
 const SPOT_DATE = toISODate(spotValueDate(new Date(`${TODAY}T00:00:00`)));
+const OPTION_EXPIRY = toISODate(
+  addBusinessDays(new Date(`${TODAY}T00:00:00`), 21),
+);
+
+// FX option delivery is the expiry date + 2 business days.
+function deliveryDateFor(expiryISO) {
+  return toISODate(
+    addBusinessDays(new Date(`${expiryISO}T00:00:00`), 2),
+  );
+}
+
+const OPTION_DELIVERY = deliveryDateFor(OPTION_EXPIRY);
 
 const EMPTY_FORM = {
   instrument_type: "SPOT",
@@ -21,22 +43,51 @@ const EMPTY_FORM = {
   counterparty: "BANK_A",
   rate: "1.0850",
   settlement_date: SPOT_DATE,
+  // OPTION
+  option_type: "CALL",
+  strike_rate: "1.0850",
+  premium_date: SPOT_DATE,
+  expiry_date: OPTION_EXPIRY,
+  delivery_date: OPTION_DELIVERY,
+  premium: "0",
+  premium_currency: "USD",
+  exercise_style: "EUROPEAN",
 };
 
 function buildPayload(form) {
   const notional_1 = Number(form.notional_1);
-  const rate = Number(form.rate);
   const type = form.instrument_type;
-  return {
+  const isOption = type === "OPTION";
+  const base = {
     instrument_type: type,
     currency_pair: form.currency_pair,
     direction: form.direction,
     currency_1: form.currency_pair.slice(0, 3),
     notional_1,
     currency_2: form.currency_pair.slice(3),
-    notional_2: Math.round(notional_1 * rate * 100) / 100,
     counterparty: form.counterparty,
     comment: "",
+  };
+  if (isOption) {
+    return {
+      ...base,
+      instrument_details: {
+        instrument_type: "OPTION",
+        option_type: form.option_type,
+        strike_rate: Number(form.strike_rate),
+        premium_date: form.premium_date,
+        expiry_date: form.expiry_date,
+        delivery_date: form.delivery_date,
+        premium: Number(form.premium),
+        premium_currency: form.premium_currency,
+        exercise_style: form.exercise_style,
+      },
+    };
+  }
+  const rate = Number(form.rate);
+  return {
+    ...base,
+    notional_2: Math.round(notional_1 * rate * 100) / 100,
     instrument_details: {
       instrument_type: type,
       rate,
@@ -54,6 +105,28 @@ function formatRate(value) {
 }
 
 function validate(form) {
+  if (form.instrument_type === "OPTION") {
+    if (!form.option_type) return "Option type (CALL/PUT) is required.";
+    if (!form.strike_rate || Number(form.strike_rate) <= 0) {
+      return "Strike rate is required and must be positive.";
+    }
+    for (const [label, value] of [
+      ["Premium date", form.premium_date],
+      ["Expiry date", form.expiry_date],
+      ["Delivery date", form.delivery_date],
+    ]) {
+      if (!value) return `${label} is required.`;
+      if (!isBusinessDay(new Date(`${value}T00:00:00`))) {
+        return `${label} must be a business day (Mon-Fri).`;
+      }
+    }
+    if (form.expiry_date < TODAY) return `Expiry date cannot be before ${TODAY}.`;
+    if (form.delivery_date < form.expiry_date) {
+      return "Delivery date cannot be before the expiry date.";
+    }
+    if (Number(form.premium) < 0) return "Premium cannot be negative.";
+    return null;
+  }
   const settlement = form.settlement_date;
   if (!settlement) return "Settlement date is required.";
   if (!isBusinessDay(new Date(`${settlement}T00:00:00`))) {
@@ -73,6 +146,7 @@ function validate(form) {
 }
 
 function suggestedType(form) {
+  if (form.instrument_type === "OPTION") return null;
   const s = form.settlement_date;
   if (form.instrument_type === "SPOT" && s > SPOT_DATE) return "FORWARD";
   if (form.instrument_type === "FORWARD" && s <= SPOT_DATE) return "SPOT";
@@ -84,18 +158,25 @@ export function NewTradeForm({ onBooked }) {
   const [review, setReview] = useState(null); // payload awaiting confirmation
   const [formError, setFormError] = useState(null);
   const [rateTouched, setRateTouched] = useState(false);
+  const [strikeTouched, setStrikeTouched] = useState(false);
+  const [deliveryTouched, setDeliveryTouched] = useState(false);
   const { submit, submitting, result, error } = useBookTrade();
   const { rates } = useMarketRates();
 
   // Default the rate to the latest market rate for the selected pair, unless
-  // the user has manually overridden it.
+  // the user has manually overridden it. The strike follows the same market
+  // default for OPTION trades.
   useEffect(() => {
     const entry = rates[form.currency_pair];
-    if (entry?.rate != null && !rateTouched) {
-      const market = formatRate(entry.rate);
-      setForm((prev) => (prev.rate !== market ? { ...prev, rate: market } : prev));
-    }
-  }, [form.currency_pair, rates, rateTouched]);
+    if (entry?.rate == null) return;
+    const market = formatRate(entry.rate);
+    setForm((prev) => {
+      const next = { ...prev };
+      if (!rateTouched && prev.rate !== market) next.rate = market;
+      if (!strikeTouched && prev.strike_rate !== market) next.strike_rate = market;
+      return next;
+    });
+  }, [form.currency_pair, rates, rateTouched, strikeTouched]);
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -111,12 +192,39 @@ export function NewTradeForm({ onBooked }) {
   function handleTypeChange(value) {
     setForm((prev) => ({ ...prev, instrument_type: value }));
     setRateTouched(false); // re-default to the market rate (SPOT or FORWARD)
+    setStrikeTouched(false);
+    setDeliveryTouched(false); // re-derive delivery from the default expiry
     setFormError(null);
   }
 
   function handleRateChange(value) {
     setForm((prev) => ({ ...prev, rate: value }));
     setRateTouched(true); // don't overwrite a manually entered rate
+    setFormError(null);
+  }
+
+  function handleStrikeChange(value) {
+    setForm((prev) => ({ ...prev, strike_rate: value }));
+    setStrikeTouched(true); // don't overwrite a manually entered strike
+    setFormError(null);
+  }
+
+  function handleExpiryChange(value) {
+    setForm((prev) => {
+      const next = { ...prev, expiry_date: value };
+      // Delivery follows expiry + 2 business days unless the user has
+      // manually chosen a delivery date.
+      if (!deliveryTouched && value) {
+        next.delivery_date = deliveryDateFor(value);
+      }
+      return next;
+    });
+    setFormError(null);
+  }
+
+  function handleDeliveryChange(value) {
+    setForm((prev) => ({ ...prev, delivery_date: value }));
+    setDeliveryTouched(true); // don't re-derive delivery from expiry
     setFormError(null);
   }
 
@@ -140,6 +248,8 @@ export function NewTradeForm({ onBooked }) {
     if (trade) {
       setForm(EMPTY_FORM);
       setRateTouched(false);
+      setStrikeTouched(false);
+      setDeliveryTouched(false);
       setReview(null);
       onBooked?.(trade);
     }
@@ -147,7 +257,10 @@ export function NewTradeForm({ onBooked }) {
 
   const suggest = suggestedType(form);
 
+  const isOption = form.instrument_type === "OPTION";
+
   if (review) {
+    const details = review.instrument_details;
     return (
       <div className="panel__body">
         <h2 className="panel__title">Confirm Trade</h2>
@@ -170,20 +283,57 @@ export function NewTradeForm({ onBooked }) {
               {formatNumber(review.notional_1)} {review.currency_1}
             </strong>
           </li>
-          <li>
-            <span>Rate</span>
-            <strong>{review.instrument_details.rate}</strong>
-          </li>
-          <li>
-            <span>Counter leg</span>
-            <strong>
-              {formatNumber(review.notional_2)} {review.currency_2}
-            </strong>
-          </li>
-          <li>
-            <span>Settlement</span>
-            <strong>{review.instrument_details.settlement_date}</strong>
-          </li>
+          {review.instrument_type === "OPTION" ? (
+            <>
+              <li>
+                <span>Option</span>
+                <strong>{details.option_type}</strong>
+              </li>
+              <li>
+                <span>Strike</span>
+                <strong>{formatRate(details.strike_rate)}</strong>
+              </li>
+              <li>
+                <span>Exercise</span>
+                <strong>{details.exercise_style}</strong>
+              </li>
+              <li>
+                <span>Expiry</span>
+                <strong>{details.expiry_date}</strong>
+              </li>
+              <li>
+                <span>Delivery</span>
+                <strong>{details.delivery_date}</strong>
+              </li>
+              <li>
+                <span>Premium</span>
+                <strong>
+                  {formatNumber(details.premium)} {details.premium_currency}
+                </strong>
+              </li>
+              <li>
+                <span>Premium date</span>
+                <strong>{details.premium_date}</strong>
+              </li>
+            </>
+          ) : (
+            <>
+              <li>
+                <span>Rate</span>
+                <strong>{details.rate}</strong>
+              </li>
+              <li>
+                <span>Counter leg</span>
+                <strong>
+                  {formatNumber(review.notional_2)} {review.currency_2}
+                </strong>
+              </li>
+              <li>
+                <span>Settlement</span>
+                <strong>{details.settlement_date}</strong>
+              </li>
+            </>
+          )}
           <li>
             <span>Counterparty</span>
             <strong>{review.counterparty}</strong>
@@ -300,39 +450,183 @@ export function NewTradeForm({ onBooked }) {
               required
             />
           </div>
-          <div className="field">
-            <label className="field__label" htmlFor="rate">
-              Rate
-            </label>
-            <input
-              id="rate"
-              className="field__input"
-              type="number"
-              min="0"
-              step="0.0001"
-              value={form.rate}
-              onChange={(e) => handleRateChange(e.target.value)}
-              required
-            />
-          </div>
+          {isOption ? (
+            <div className="field">
+              <label className="field__label" htmlFor="option_type">
+                Option Type
+              </label>
+              <select
+                id="option_type"
+                className="field__select"
+                value={form.option_type}
+                onChange={(e) => update("option_type", e.target.value)}
+              >
+                {OPTION_TYPES.map((optionType) => (
+                  <option key={optionType} value={optionType}>
+                    {optionType}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="field">
+              <label className="field__label" htmlFor="rate">
+                Rate
+              </label>
+              <input
+                id="rate"
+                className="field__input"
+                type="number"
+                min="0"
+                step="0.0001"
+                value={form.rate}
+                onChange={(e) => handleRateChange(e.target.value)}
+                required
+              />
+            </div>
+          )}
         </div>
 
-        <div className="field">
-          <label className="field__label" htmlFor="settlement_date">
-            Settlement Date
-          </label>
-          <input
-            id="settlement_date"
-            className="field__input"
-            type="date"
-            value={form.settlement_date}
-            onChange={(e) => update("settlement_date", e.target.value)}
-            required
-          />
-          <p className="field__hint">
-            SPOT settles by {SPOT_DATE}; later dates are FORWARD.
-          </p>
-        </div>
+        {isOption ? (
+          <>
+            <div className="form__row">
+              <div className="field">
+                <label className="field__label" htmlFor="strike_rate">
+                  Strike Rate
+                </label>
+                <input
+                  id="strike_rate"
+                  className="field__input"
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  value={form.strike_rate}
+                  onChange={(e) => handleStrikeChange(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label className="field__label" htmlFor="exercise_style">
+                  Exercise Style
+                </label>
+                <select
+                  id="exercise_style"
+                  className="field__select"
+                  value={form.exercise_style}
+                  onChange={(e) => update("exercise_style", e.target.value)}
+                >
+                  {EXERCISE_STYLES.map((style) => (
+                    <option key={style} value={style}>
+                      {style}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="form__row">
+              <div className="field">
+                <label className="field__label" htmlFor="premium">
+                  Premium
+                </label>
+                <input
+                  id="premium"
+                  className="field__input"
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  value={form.premium}
+                  onChange={(e) => update("premium", e.target.value)}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label className="field__label" htmlFor="premium_currency">
+                  Premium Currency
+                </label>
+                <select
+                  id="premium_currency"
+                  className="field__select"
+                  value={form.premium_currency}
+                  onChange={(e) => update("premium_currency", e.target.value)}
+                >
+                  {PREMIUM_CURRENCIES.map((currency) => (
+                    <option key={currency} value={currency}>
+                      {currency}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="form__row">
+              <div className="field">
+                <label className="field__label" htmlFor="premium_date">
+                  Premium Date
+                </label>
+                <input
+                  id="premium_date"
+                  className="field__input"
+                  type="date"
+                  value={form.premium_date}
+                  onChange={(e) => update("premium_date", e.target.value)}
+                  required
+                />
+                <p className="field__hint">
+                  Premium date is the spot date ({SPOT_DATE}).
+                </p>
+              </div>
+              <div className="field">
+                <label className="field__label" htmlFor="expiry_date">
+                  Expiry Date
+                </label>
+                <input
+                  id="expiry_date"
+                  className="field__input"
+                  type="date"
+                  value={form.expiry_date}
+                  onChange={(e) => handleExpiryChange(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="field">
+              <label className="field__label" htmlFor="delivery_date">
+                Delivery Date
+              </label>
+              <input
+                id="delivery_date"
+                className="field__input"
+                type="date"
+                value={form.delivery_date}
+                onChange={(e) => handleDeliveryChange(e.target.value)}
+                required
+              />
+              <p className="field__hint">
+                Delivery is expiry + 2 business days and updates when the expiry
+                changes.
+              </p>
+            </div>
+          </>
+        ) : (
+          <div className="field">
+            <label className="field__label" htmlFor="settlement_date">
+              Settlement Date
+            </label>
+            <input
+              id="settlement_date"
+              className="field__input"
+              type="date"
+              value={form.settlement_date}
+              onChange={(e) => update("settlement_date", e.target.value)}
+              required
+            />
+            <p className="field__hint">
+              SPOT settles by {SPOT_DATE}; later dates are FORWARD.
+            </p>
+          </div>
+        )}
 
         {formError && (
           <p className="form__result form__result--error">

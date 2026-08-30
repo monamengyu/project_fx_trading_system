@@ -46,7 +46,7 @@ async def draft_to_trade_create(draft: NLTradeDraft) -> TradeCreate:
             instrument_type="OPTION",
             option_type=inst.option_type or "CALL",
             strike_rate=inst.strike_rate if inst.strike_rate is not None else 1.0,
-            premium_date=inst.premium_date or today,
+            premium_date=inst.premium_date or spot_value_date(today),
             expiry_date=inst.expiry_date,
             delivery_date=inst.delivery_date or inst.expiry_date,
             premium=inst.premium if inst.premium is not None else 0.0,

@@ -113,7 +113,7 @@ async def test_resolver_defaults_missing_option_fields():
     assert details.premium == 0.0
     assert details.premium_currency == "USD"
     assert details.exercise_style == "EUROPEAN"
-    assert details.premium_date == effective_trade_date(date.today())
+    assert details.premium_date == spot_value_date(effective_trade_date(date.today()))
 
 
 async def test_resolver_rejects_bad_settlement_window():

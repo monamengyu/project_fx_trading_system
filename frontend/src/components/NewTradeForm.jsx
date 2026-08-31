@@ -39,7 +39,7 @@ const EMPTY_FORM = {
   instrument_type: "SPOT",
   currency_pair: "EURUSD",
   direction: "BUY",
-  notional_1: "1000000",
+  notional_1: "1,000,000",
   counterparty: "BANK_A",
   rate: "1.0850",
   settlement_date: SPOT_DATE,
@@ -55,7 +55,7 @@ const EMPTY_FORM = {
 };
 
 function buildPayload(form) {
-  const notional_1 = Number(form.notional_1);
+  const notional_1 = toNumber(form.notional_1);
   const type = form.instrument_type;
   const isOption = type === "OPTION";
   const base = {
@@ -74,17 +74,17 @@ function buildPayload(form) {
       instrument_details: {
         instrument_type: "OPTION",
         option_type: form.option_type,
-        strike_rate: Number(form.strike_rate),
+        strike_rate: toNumber(form.strike_rate),
         premium_date: form.premium_date,
         expiry_date: form.expiry_date,
         delivery_date: form.delivery_date,
-        premium: Number(form.premium),
+        premium: toNumber(form.premium),
         premium_currency: form.premium_currency,
         exercise_style: form.exercise_style,
       },
     };
   }
-  const rate = Number(form.rate);
+  const rate = toNumber(form.rate);
   return {
     ...base,
     notional_2: Math.round(notional_1 * rate * 100) / 100,
@@ -104,10 +104,44 @@ function formatRate(value) {
   return Number(value).toFixed(4);
 }
 
+// Strips grouping commas and converts a form value to a number (NaN-safe).
+function toNumber(value) {
+  if (value == null || value === "") return NaN;
+  return Number(String(value).replace(/,/g, ""));
+}
+
+// Groups the integer part of a numeric string with thousands separators.
+function formatInput(value) {
+  if (value == null || value === "") return "";
+  const s = String(value);
+  const negative = s.startsWith("-");
+  const unsigned = negative ? s.slice(1) : s;
+  const dotIndex = unsigned.indexOf(".");
+  const intPart = dotIndex === -1 ? unsigned : unsigned.slice(0, dotIndex);
+  const fracPart = dotIndex === -1 ? "" : unsigned.slice(dotIndex + 1);
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${negative ? "-" : ""}${grouped}${dotIndex === -1 ? "" : `.${fracPart}`}`;
+}
+
+// Maps a caret position in the raw (comma-free) input to the equivalent
+// position in the comma-grouped value so grouping doesn't move the caret.
+function cursorAfterCommas(formatted, raw, cursor) {
+  let kept = 0;
+  for (let i = 0; i < cursor && i < raw.length; i++) {
+    if (raw[i] !== ",") kept++;
+  }
+  let pos = 0;
+  while (pos < formatted.length && kept > 0) {
+    if (formatted[pos] !== ",") kept--;
+    pos++;
+  }
+  return pos;
+}
+
 function validate(form) {
   if (form.instrument_type === "OPTION") {
     if (!form.option_type) return "Option type (CALL/PUT) is required.";
-    if (!form.strike_rate || Number(form.strike_rate) <= 0) {
+    if (!form.strike_rate || toNumber(form.strike_rate) <= 0) {
       return "Strike rate is required and must be positive.";
     }
     for (const [label, value] of [
@@ -124,7 +158,7 @@ function validate(form) {
     if (form.delivery_date < form.expiry_date) {
       return "Delivery date cannot be before the expiry date.";
     }
-    if (Number(form.premium) < 0) return "Premium cannot be negative.";
+    if (toNumber(form.premium) < 0) return "Premium cannot be negative.";
     return null;
   }
   const settlement = form.settlement_date;
@@ -197,16 +231,27 @@ export function NewTradeForm({ onBooked }) {
     setFormError(null);
   }
 
-  function handleRateChange(value) {
-    setForm((prev) => ({ ...prev, rate: value }));
-    setRateTouched(true); // don't overwrite a manually entered rate
+  function handleNumericInput(field, event) {
+    const input = event.target;
+    const cursor = input.selectionStart ?? input.value.length;
+    const cleaned = input.value.replace(/,/g, "");
+    // Reject any input that is not a valid (partial) decimal number.
+    if (!/^-?\d*\.?\d*$/.test(cleaned)) {
+      input.value = formatInput(form[field]); // restore the last valid value
+      return;
+    }
+    const formatted = formatInput(cleaned);
+    if (field === "rate") setRateTouched(true); // don't overwrite a manual rate
+    if (field === "strike_rate") setStrikeTouched(true); // don't overwrite a manual strike
+    setForm((prev) => ({ ...prev, [field]: formatted }));
     setFormError(null);
-  }
-
-  function handleStrikeChange(value) {
-    setForm((prev) => ({ ...prev, strike_rate: value }));
-    setStrikeTouched(true); // don't overwrite a manually entered strike
-    setFormError(null);
+    // Keep the caret where the user was typing after grouping commas.
+    const nextCursor = cursorAfterCommas(formatted, input.value, cursor);
+    requestAnimationFrame(() => {
+      if (input.selectionStart != null) {
+        input.setSelectionRange(nextCursor, nextCursor);
+      }
+    });
   }
 
   function handleExpiryChange(value) {
@@ -442,11 +487,10 @@ export function NewTradeForm({ onBooked }) {
             <input
               id="notional_1"
               className="field__input"
-              type="number"
-              min="0"
-              step="1"
+              type="text"
+              inputMode="decimal"
               value={form.notional_1}
-              onChange={(e) => update("notional_1", e.target.value)}
+              onChange={(e) => handleNumericInput("notional_1", e)}
               required
             />
           </div>
@@ -476,11 +520,10 @@ export function NewTradeForm({ onBooked }) {
               <input
                 id="rate"
                 className="field__input"
-                type="number"
-                min="0"
-                step="0.0001"
+                type="text"
+                inputMode="decimal"
                 value={form.rate}
-                onChange={(e) => handleRateChange(e.target.value)}
+                onChange={(e) => handleNumericInput("rate", e)}
                 required
               />
             </div>
@@ -497,11 +540,10 @@ export function NewTradeForm({ onBooked }) {
                 <input
                   id="strike_rate"
                   className="field__input"
-                  type="number"
-                  min="0"
-                  step="0.0001"
+                  type="text"
+                  inputMode="decimal"
                   value={form.strike_rate}
-                  onChange={(e) => handleStrikeChange(e.target.value)}
+                  onChange={(e) => handleNumericInput("strike_rate", e)}
                   required
                 />
               </div>
@@ -532,11 +574,10 @@ export function NewTradeForm({ onBooked }) {
                 <input
                   id="premium"
                   className="field__input"
-                  type="number"
-                  min="0"
-                  step="0.0001"
+                  type="text"
+                  inputMode="decimal"
                   value={form.premium}
-                  onChange={(e) => update("premium", e.target.value)}
+                  onChange={(e) => handleNumericInput("premium", e)}
                   required
                 />
               </div>

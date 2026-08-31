@@ -119,6 +119,41 @@ describe("NewTradeForm", () => {
     expect(screen.getByLabelText("Rate").value).toBe("1.9999");
   });
 
+  it("groups thousands with commas in numeric inputs", async () => {
+    render(<NewTradeForm onBooked={vi.fn()} />);
+    expect(screen.getByLabelText("Notional (EUR)").value).toBe("1,000,000");
+
+    fireEvent.change(screen.getByLabelText("Notional (EUR)"), {
+      target: { value: "25000000" },
+    });
+    expect(screen.getByLabelText("Notional (EUR)").value).toBe("25,000,000");
+  });
+
+  it("preserves a trailing decimal point while typing decimals", async () => {
+    render(<NewTradeForm onBooked={vi.fn()} />);
+    const rate = screen.getByLabelText("Rate");
+    fireEvent.change(rate, { target: { value: "1." } });
+    expect(rate.value).toBe("1.");
+    fireEvent.change(rate, { target: { value: "1.234" } });
+    expect(rate.value).toBe("1.234");
+  });
+
+  it("parses comma-formatted decimal notional when booking", async () => {
+    bookTrade.mockResolvedValue({ trade_id: "3", status: "PENDING_CONFIRMATION" });
+    const onBooked = vi.fn();
+    const user = userEvent.setup();
+    render(<NewTradeForm onBooked={onBooked} />);
+
+    fireEvent.change(screen.getByLabelText("Notional (EUR)"), {
+      target: { value: "1,234.56" },
+    });
+    await reviewDefault(user);
+    await user.click(screen.getByRole("button", { name: "Confirm & Book" }));
+
+    const payload = bookTrade.mock.calls[0][0];
+    expect(payload.notional_1).toBe(1234.56);
+  });
+
   it("books a FORWARD trade with a later settlement date", async () => {
     bookTrade.mockResolvedValue({ trade_id: "2", status: "PENDING_CONFIRMATION" });
     const onBooked = vi.fn();

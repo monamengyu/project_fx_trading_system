@@ -30,6 +30,17 @@ function notional2For(trade) {
   return Math.round(trade.notional_1 * strike * 100) / 100;
 }
 
+// Display helpers: group thousands with commas; rates keep their precision.
+function formatNumber(value) {
+  if (value == null) return null;
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value);
+}
+
+function formatRate(value) {
+  if (value == null) return null;
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(value);
+}
+
 export function TradeBlotter({
   trades,
   loading,
@@ -177,14 +188,15 @@ export function TradeBlotter({
               <td>{trade.currency_pair}</td>
               <td>{trade.direction}</td>
               <td>
-                {trade.instrument_details?.strike_rate ??
-                  trade.instrument_details?.rate ??
-                  "—"}
+                {formatRate(
+                  trade.instrument_details?.strike_rate ??
+                    trade.instrument_details?.rate,
+                ) ?? "—"}
               </td>
               <td>{trade.currency_1}</td>
-              <td>{trade.notional_1}</td>
+              <td>{formatNumber(trade.notional_1) ?? "—"}</td>
               <td>{trade.currency_2}</td>
-              <td>{notional2For(trade) ?? "—"}</td>
+              <td>{formatNumber(notional2For(trade)) ?? "—"}</td>
               <td>
                 {trade.instrument_details?.expiry_date ??
                   trade.instrument_details?.settlement_date ??

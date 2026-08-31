@@ -77,9 +77,9 @@ describe("TradeBlotter", () => {
     expect(row.getByText("BUY")).toBeInTheDocument();
     expect(row.getByText("1.085")).toBeInTheDocument();
     expect(row.getByText("EUR")).toBeInTheDocument();
-    expect(row.getByText("1000000")).toBeInTheDocument();
+    expect(row.getByText("1,000,000")).toBeInTheDocument();
     expect(row.getByText("USD")).toBeInTheDocument();
-    expect(row.getByText("1085000")).toBeInTheDocument();
+    expect(row.getByText("1,085,000")).toBeInTheDocument();
     expect(row.getByText("2026-08-19")).toBeInTheDocument();
     expect(row.getByText("BANK_A")).toBeInTheDocument();
     expect(row.getByText("BOOKED")).toBeInTheDocument();
@@ -104,7 +104,7 @@ describe("TradeBlotter", () => {
     };
     renderBlotter({ trades: [optionTrade] });
     const row = within(screen.getByRole("row", { name: /abc-123/ }));
-    expect(row.getByText("1085000")).toBeInTheDocument();
+    expect(row.getByText("1,085,000")).toBeInTheDocument();
   });
 
   it("shows an error when the request fails", () => {

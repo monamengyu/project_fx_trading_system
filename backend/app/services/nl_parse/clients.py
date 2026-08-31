@@ -6,6 +6,7 @@ models go through a single OpenRouter gateway (OpenAI-compatible
 baseline client wraps the deterministic rule-based parser.
 """
 
+import asyncio
 import json
 
 import httpx
@@ -70,20 +71,31 @@ class OpenAICompatClient:
             "response_format": {"type": "json_object"},
             "temperature": 0,
         }
-        try:
-            async with httpx.AsyncClient(timeout=settings.llm_request_timeout_seconds) as client:
-                response = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    json=payload,
-                    headers=headers,
-                )
-                response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            raise RuntimeError(_provider_error(exc)) from exc
-        except httpx.TransportError as exc:
-            raise RuntimeError(f"cannot reach provider at {self.base_url}: {exc}") from exc
-        content = response.json()["choices"][0]["message"]["content"]
-        return json.loads(content)
+        # Retry a couple of times: Ollama drops the connection while it is
+        # loading a cold model into memory; the retry succeeds once loaded.
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=settings.llm_request_timeout_seconds) as client:
+                    response = await client.post(
+                        f"{self.base_url}/chat/completions",
+                        json=payload,
+                        headers=headers,
+                    )
+                    response.raise_for_status()
+                content = response.json()["choices"][0]["message"]["content"]
+                return json.loads(content)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 503 and attempt < 2:
+                    last_exc = exc
+                else:
+                    raise RuntimeError(_provider_error(exc)) from exc
+            except httpx.TransportError as exc:
+                if attempt >= 2:
+                    raise RuntimeError(f"cannot reach provider at {self.base_url}: {exc}") from exc
+                last_exc = exc
+            await asyncio.sleep(1.5 * (attempt + 1))
+        raise RuntimeError(f"cannot reach provider at {self.base_url}: {last_exc}") from last_exc
 
 
 class OpenRouterClient:

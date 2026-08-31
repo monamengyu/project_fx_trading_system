@@ -28,7 +28,11 @@ class Settings(BaseSettings):
         "google/gemini-2.0-flash-001",
     ]
     ollama_base_url: str = "http://localhost:11434/v1"
-    llm_request_timeout_seconds: int = 30
+    # Local Ollama model IDs offered in the NL parse dropdown (JSON list in .env)
+    ollama_models: list[str] = ["llama3.2:3b", "qwen2.5:3b", "gemma2:2b", "phi3.5"]
+    # Generous timeout: cold-loading a large local model (e.g. phi3.5) on CPU
+    # can take ~80s before the first token arrives.
+    llm_request_timeout_seconds: int = 120
 
 
 settings = Settings()

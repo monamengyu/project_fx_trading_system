@@ -246,7 +246,9 @@ Streams live mark-to-market (MTM) position updates.
 ### `GET /nl-parse/models`
 List the models selectable for NL trade parsing. The `rule-based` baseline is
 always present; hosted LLM models (served through OpenRouter) are only listed
-when `OPENROUTER_API_KEY` is configured, plus the local `ollama-llama3`.
+when `OPENROUTER_API_KEY` is configured, plus the local Ollama models
+(`OLLAMA_MODELS`, default `llama3.2:3b`, `qwen2.5:3b`, `gemma2:2b`,
+`phi3.5:mini`), always.
 
 **Response `200 OK`**: array of `{ "id", "label", "kind" }`.
 
@@ -278,5 +280,5 @@ Models: `rule-based` (baseline, always), one entry per ID in the
 `OPENROUTER_MODELS` env list (JSON) served via OpenRouter — e.g.
 `openai/gpt-4o-mini`, `anthropic/claude-sonnet-4-5`,
 `google/gemini-2.0-flash-001` — listed only when `OPENROUTER_API_KEY` is set,
-and `ollama-llama3` (local, always). Missing rates are resolved from the live market rate; missing
+and one entry per ID in the `OLLAMA_MODELS` env list (local, always). Missing rates are resolved from the live market rate; missing
 option fields get defaults (premium 0, delivery = expiry, EUROPEAN style).

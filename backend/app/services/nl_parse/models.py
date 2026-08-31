@@ -27,7 +27,11 @@ def _label_for(model_id: str) -> str:
 
 def available_models() -> list[ModelInfo]:
     models: list[ModelInfo] = [
-        ModelInfo(id="rule-based", label="Rule-based baseline", kind="baseline")
+        ModelInfo(
+            id="rule-based",
+            label="Rule-based baseline",
+            kind="baseline",
+        )
     ]
     if settings.openrouter_api_key:
         for model_id in settings.openrouter_models:
@@ -39,14 +43,15 @@ def available_models() -> list[ModelInfo]:
                     model=model_id,
                 )
             )
-    models.append(
-        ModelInfo(
-            id="ollama-llama3",
-            label="Local Ollama llama3",
-            kind="ollama",
-            model="llama3",
+    for model_id in settings.ollama_models:
+        models.append(
+            ModelInfo(
+                id=model_id,
+                label=f"Local Ollama {model_id}",
+                kind="ollama",
+                model=model_id,
+            )
         )
-    )
     return models
 
 

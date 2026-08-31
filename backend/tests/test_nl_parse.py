@@ -45,7 +45,22 @@ def test_registry_hides_openrouter_models_without_key(monkeypatch):
     ids = [m.id for m in available_models()]
     assert not any(m.kind == "openrouter" for m in available_models())
     assert "rule-based" in ids
-    assert "ollama-llama3" in ids
+    assert "llama3.2:3b" in ids
+    assert "qwen2.5:3b" in ids
+
+
+def test_registry_lists_all_ollama_models(monkeypatch):
+    from app.core.config import settings
+    from app.services.nl_parse.models import available_models
+
+    monkeypatch.setattr(settings, "openrouter_api_key", None)
+    ollama_ids = [m.id for m in available_models() if m.kind == "ollama"]
+    assert set(ollama_ids) == {
+        "llama3.2:3b",
+        "qwen2.5:3b",
+        "gemma2:2b",
+        "phi3.5",
+    }
 
 
 def test_baseline_parses_spot():

@@ -20,6 +20,16 @@ function clean(obj) {
   return out;
 }
 
+// Notional 2 is notional 1 × strike (strike_rate for options, rate otherwise).
+// SPOT/FORWARD trades store it, OPTION trades derive it at display time.
+function notional2For(trade) {
+  if (trade.notional_2 != null) return trade.notional_2;
+  const strike =
+    trade.instrument_details?.strike_rate ?? trade.instrument_details?.rate;
+  if (trade.notional_1 == null || strike == null) return null;
+  return Math.round(trade.notional_1 * strike * 100) / 100;
+}
+
 export function TradeBlotter({
   trades,
   loading,
@@ -174,7 +184,7 @@ export function TradeBlotter({
               <td>{trade.currency_1}</td>
               <td>{trade.notional_1}</td>
               <td>{trade.currency_2}</td>
-              <td>{trade.notional_2 ?? "—"}</td>
+              <td>{notional2For(trade) ?? "—"}</td>
               <td>
                 {trade.instrument_details?.expiry_date ??
                   trade.instrument_details?.settlement_date ??

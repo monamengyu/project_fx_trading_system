@@ -85,6 +85,28 @@ describe("TradeBlotter", () => {
     expect(row.getByText("BOOKED")).toBeInTheDocument();
   });
 
+  it("derives notional 2 for an OPTION as notional 1 × strike rate", () => {
+    const optionTrade = {
+      ...trade,
+      instrument_type: "OPTION",
+      notional_2: undefined,
+      instrument_details: {
+        instrument_type: "OPTION",
+        option_type: "CALL",
+        strike_rate: 1.085,
+        expiry_date: "2027-07-30",
+        delivery_date: "2027-08-02",
+        premium_date: "2026-08-19",
+        premium: 12500,
+        premium_currency: "USD",
+        exercise_style: "EUROPEAN",
+      },
+    };
+    renderBlotter({ trades: [optionTrade] });
+    const row = within(screen.getByRole("row", { name: /abc-123/ }));
+    expect(row.getByText("1085000")).toBeInTheDocument();
+  });
+
   it("shows an error when the request fails", () => {
     renderBlotter({ error: "boom" });
     expect(screen.getByText("boom")).toBeInTheDocument();

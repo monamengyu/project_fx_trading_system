@@ -26,15 +26,26 @@ def _draft(**overrides):
     return NLTradeDraft(**base)
 
 
-def test_registry_lists_anthropic_models_when_keyed(monkeypatch):
+def test_registry_lists_openrouter_models_when_keyed(monkeypatch):
     from app.core.config import settings
     from app.services.nl_parse.models import available_models
 
-    monkeypatch.setattr(settings, "anthropic_api_key", "sk-ant-test")
+    monkeypatch.setattr(settings, "openrouter_api_key", "sk-or-test")
     ids = [m.id for m in available_models()]
-    assert any(i.startswith("anthropic-") for i in ids)
+    assert any(i.startswith("openai/") for i in ids)
     assert any("claude-sonnet-4-5" in i for i in ids)
-    assert any("claude-opus-5" in i for i in ids)
+    assert any(i.startswith("google/") for i in ids)
+
+
+def test_registry_hides_openrouter_models_without_key(monkeypatch):
+    from app.core.config import settings
+    from app.services.nl_parse.models import available_models
+
+    monkeypatch.setattr(settings, "openrouter_api_key", None)
+    ids = [m.id for m in available_models()]
+    assert not any(m.kind == "openrouter" for m in available_models())
+    assert "rule-based" in ids
+    assert "ollama-llama3" in ids
 
 
 def test_baseline_parses_spot():

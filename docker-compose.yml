@@ -25,7 +25,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-fxuser}:${POSTGRES_PASSWORD:-fxpassword}@postgres:5432/${POSTGRES_DB:-fx_trading}
-      LLM_API_KEY: ${LLM_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
     ports:
       - "8000:8000"
     volumes:

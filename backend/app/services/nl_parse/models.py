@@ -1,8 +1,9 @@
 """Registry of selectable NL parsing models.
 
-``rule-based`` (the deterministic baseline) is always available. LLM models are
-only listed when their API key is configured, so the list works in CI without
-any keys. ``ollama`` is listed unconditionally because it is local.
+``rule-based`` (the deterministic baseline) is always available. Hosted LLM
+models are exposed through a single OpenRouter gateway and are only listed when
+``OPENROUTER_API_KEY`` is configured, so the list works in CI without any keys.
+``ollama`` is listed unconditionally because it is local and keyless.
 """
 
 from dataclasses import dataclass
@@ -15,39 +16,27 @@ from app.core.config import settings
 class ModelInfo:
     id: str
     label: str
-    kind: Literal["baseline", "openai", "anthropic", "ollama"]
+    kind: Literal["baseline", "openrouter", "ollama"]
     model: str | None = None
+
+
+def _label_for(model_id: str) -> str:
+    provider, _, name = model_id.partition("/")
+    return f"{provider} {name}" if provider else model_id
 
 
 def available_models() -> list[ModelInfo]:
     models: list[ModelInfo] = [
         ModelInfo(id="rule-based", label="Rule-based baseline", kind="baseline")
     ]
-    if settings.openai_api_key:
-        models.append(
-            ModelInfo(
-                id="openai-gpt-4o-mini",
-                label="OpenAI gpt-4o-mini",
-                kind="openai",
-                model="gpt-4o-mini",
-            )
-        )
-        models.append(
-            ModelInfo(
-                id="openai-gpt-4o",
-                label="OpenAI gpt-4o",
-                kind="openai",
-                model="gpt-4o",
-            )
-        )
-    if settings.anthropic_api_key:
-        for model in settings.anthropic_models:
+    if settings.openrouter_api_key:
+        for model_id in settings.openrouter_models:
             models.append(
                 ModelInfo(
-                    id=f"anthropic-{model}",
-                    label=f"Anthropic {model}",
-                    kind="anthropic",
-                    model=model,
+                    id=model_id,
+                    label=_label_for(model_id),
+                    kind="openrouter",
+                    model=model_id,
                 )
             )
     models.append(

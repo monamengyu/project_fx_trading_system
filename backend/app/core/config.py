@@ -15,22 +15,17 @@ class Settings(BaseSettings):
     # Browser origins allowed to call the API (the React dev server).
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
-    # NL trade parsing 
+    # NL trade parsing
     nl_parse_default_model: str = "rule-based"
-    openai_api_key: str | None = None
-    openai_base_url: str = "https://api.openai.com/v1"
-    anthropic_api_key: str | None = None
-    # Anthropic model IDs offered in the NL parse dropdown (JSON list in .env)
-    anthropic_models: list[str] = [
-        "claude-haiku-4-5",
-        "claude-sonnet-4-5",
-        "claude-sonnet-4-6",
-        "claude-sonnet-5",
-        "claude-opus-4-5",
-        "claude-opus-4-6",
-        "claude-opus-4-7",
-        "claude-opus-4-8",
-        "claude-opus-5",
+    # A single OpenRouter API key enables all hosted LLM models in the dropdown.
+    openrouter_api_key: str | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # OpenRouter model IDs offered in the NL parse dropdown (JSON list in .env)
+    openrouter_models: list[str] = [
+        "openai/gpt-4o-mini",
+        "openai/gpt-4o",
+        "anthropic/claude-sonnet-4-5",
+        "google/gemini-2.0-flash-001",
     ]
     ollama_base_url: str = "http://localhost:11434/v1"
     llm_request_timeout_seconds: int = 30

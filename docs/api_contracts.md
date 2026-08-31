@@ -192,58 +192,6 @@ PENDING_CONFIRMATION, CANCELLED and MATURED trades are excluded from positions.
 
 ---
 
-## Natural Language Trade Entry
-
-### `POST /api/v1/nl/parse`
-Send raw natural language text; returns a structured but **unconfirmed** trade object for the frontend to display back to the user.
-
-**Request**
-```json
-{ "text": "Buy 1 million EUR against USD spot with Bank A" }
-```
-
-**Response `200 OK`**
-```json
-{
-  "parse_id": "uuid",
-  "parsed_trade": {
-    "instrument_type": "SPOT",
-    "currency_pair": "EURUSD",
-    "direction": "BUY",
-    "currency_1": "EUR",
-    "notional_1": 1000000,
-    "currency_2": "USD",
-    "notional_2": null,
-    "counterparty": "BANK_A",
-    "instrument_details": { "rate": null, "settlement_date": null }
-  },
-  "confidence_flags": [
-    { "field": "notional_2", "message": "not stated; derive from live rate" },
-    { "field": "instrument_details.rate", "message": "not stated; requires live market rate" }
-  ]
-}
-```
-
-**Response `422 Unprocessable Entity`** if input can't be parsed into any valid trade shape.
-
-### `POST /api/v1/nl/confirm`
-Confirm a previously parsed trade (referenced by `parse_id`), optionally with user corrections, and book it.
-
-**Request**
-```json
-{
-  "parse_id": "uuid",
-  "corrected_trade": {
-    "instrument_details": { "rate": 1.0862, "settlement_date": "2026-08-01" },
-    "notional_2": 1086200
-  }
-}
-```
-
-**Response `201 Created`**: full booked trade object (`status: "BOOKED"`)
-
----
-
 ## Market Data
 
 ### `GET /market-data/rates`
@@ -297,8 +245,8 @@ Streams live mark-to-market (MTM) position updates.
 
 ### `GET /nl-parse/models`
 List the models selectable for NL trade parsing. The `rule-based` baseline is
-always present; LLM models (OpenAI / Anthropic / Ollama) are only listed when
-their API key is configured.
+always present; hosted LLM models (served through OpenRouter) are only listed
+when `OPENROUTER_API_KEY` is configured, plus the local `ollama-llama3`.
 
 **Response `200 OK`**: array of `{ "id", "label", "kind" }`.
 
@@ -326,7 +274,9 @@ trade is persisted by this endpoint.
 **Response `422 Unprocessable Entity`** if the text cannot be parsed into a valid trade
 **Response `502 Bad Gateway`** if the selected LLM provider fails
 
-Models: `rule-based` (baseline, always), `openai-gpt-4o-mini`, `openai-gpt-4o`,
-one `anthropic-<model>` per entry in the `ANTHROPIC_MODELS` env list (JSON), and
-`ollama-llama3` — LLM entries appear only when their API key is configured. Missing rates are resolved from the live market rate; missing
+Models: `rule-based` (baseline, always), one entry per ID in the
+`OPENROUTER_MODELS` env list (JSON) served via OpenRouter — e.g.
+`openai/gpt-4o-mini`, `anthropic/claude-sonnet-4-5`,
+`google/gemini-2.0-flash-001` — listed only when `OPENROUTER_API_KEY` is set,
+and `ollama-llama3` (local, always). Missing rates are resolved from the live market rate; missing
 option fields get defaults (premium 0, delivery = expiry, EUROPEAN style).

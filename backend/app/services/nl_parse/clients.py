@@ -1,8 +1,9 @@
 """Provider adapters for NL trade parsing.
 
-Every client exposes ``async complete_json(system, user) -> dict``. OpenAI and
-Ollama share an OpenAI-compatible ``/chat/completions`` protocol; Anthropic uses
-its Messages API. The baseline client wraps the deterministic rule-based parser.
+Every client exposes ``async complete_json(system, user) -> dict``. Hosted LLM
+models go through a single OpenRouter gateway (OpenAI-compatible
+``/chat/completions`` protocol); Ollama shares that protocol locally. The
+baseline client wraps the deterministic rule-based parser.
 """
 
 import json
@@ -47,7 +48,7 @@ class BaselineClient:
 
 
 class OpenAICompatClient:
-    """Works for OpenAI and any OpenAI-compatible endpoint (e.g. Ollama)."""
+    """Works for any OpenAI-compatible endpoint (e.g. local Ollama)."""
 
     kind = "openai-compatible"
 
@@ -85,10 +86,13 @@ class OpenAICompatClient:
         return json.loads(content)
 
 
-class AnthropicClient:
-    """Anthropic Messages API client."""
+class OpenRouterClient:
+    """OpenRouter gateway client (OpenAI-compatible chat completions).
 
-    kind = "anthropic"
+    A single OpenRouter API key provides access to all hosted models.
+    """
+
+    kind = "openrouter"
 
     def __init__(self, api_key: str, model: str):
         self.api_key = api_key
@@ -97,19 +101,23 @@ class AnthropicClient:
     async def complete_json(self, system: str, user: str) -> dict:
         headers = {
             "Content-Type": "application/json",
-            "x-api-key": self.api_key,
-            "anthropic-version": "2023-06-01",
+            "Authorization": f"Bearer {self.api_key}",
+            "HTTP-Referer": "https://github.com/monamengyu/project_fx_trading_system",
+            "X-Title": "FX Trading System",
         }
         payload = {
             "model": self.model,
-            "max_tokens": 1024,
-            "system": system,
-            "messages": [{"role": "user", "content": user}],
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0,
         }
         try:
             async with httpx.AsyncClient(timeout=settings.llm_request_timeout_seconds) as client:
                 response = await client.post(
-                    "https://api.anthropic.com/v1/messages",
+                    f"{settings.openrouter_base_url.rstrip('/')}/chat/completions",
                     json=payload,
                     headers=headers,
                 )
@@ -117,20 +125,20 @@ class AnthropicClient:
         except httpx.HTTPStatusError as exc:
             raise RuntimeError(_provider_error(exc)) from exc
         except httpx.TransportError as exc:
-            raise RuntimeError("cannot reach Anthropic API: {exc}") from exc
-        text = response.json()["content"][0]["text"]
-        return json.loads(_strip_code_fences(text))
+            raise RuntimeError(
+                f"cannot reach OpenRouter at {settings.openrouter_base_url}: {exc}"
+            ) from exc
+        content = response.json()["choices"][0]["message"]["content"]
+        return json.loads(_strip_code_fences(content))
 
 
 def get_client(info: ModelInfo):
     if info.kind == "baseline":
         return BaselineClient()
-    if info.kind in ("openai", "ollama"):
-        if info.kind == "openai":
-            return OpenAICompatClient(settings.openai_base_url, settings.openai_api_key, info.model)
+    if info.kind == "openrouter":
+        if not settings.openrouter_api_key:
+            raise RuntimeError("openrouter_api_key is not configured")
+        return OpenRouterClient(settings.openrouter_api_key, info.model)
+    if info.kind == "ollama":
         return OpenAICompatClient(settings.ollama_base_url, None, info.model)
-    if info.kind == "anthropic":
-        if not settings.anthropic_api_key:
-            raise RuntimeError("anthropic_api_key is not configured")
-        return AnthropicClient(settings.anthropic_api_key, info.model)
     raise ValueError(f"unsupported model kind: {info.kind}")

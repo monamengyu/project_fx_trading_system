@@ -90,6 +90,7 @@ describe("TradeBlotter", () => {
       ...trade,
       instrument_type: "OPTION",
       notional_2: undefined,
+      comment: "1M EUR call USD put at 1.085",
       instrument_details: {
         instrument_type: "OPTION",
         option_type: "CALL",
@@ -105,6 +106,45 @@ describe("TradeBlotter", () => {
     renderBlotter({ trades: [optionTrade] });
     const row = within(screen.getByRole("row", { name: /abc-123/ }));
     expect(row.getByText("1,085,000")).toBeInTheDocument();
+  });
+
+  it("shows all trade fields in the row", () => {
+    renderBlotter({ trades: [trade] });
+    const row = within(screen.getByRole("row", { name: /abc-123/ }));
+    expect(row.getByText("2026-08-16")).toBeInTheDocument(); // trade date
+    expect(row.getByText("2026-08-19")).toBeInTheDocument(); // settlement
+    expect(row.queryByText("CALL")).not.toBeInTheDocument(); // spot has no option fields
+    expect(row.getAllByText("—").length).toBeGreaterThan(0); // option cols are empty
+  });
+
+  it("shows all OPTION fields in the row", () => {
+    const optionTrade = {
+      ...trade,
+      instrument_type: "OPTION",
+      notional_2: undefined,
+      comment: "1M EUR call USD put at 1.085",
+      instrument_details: {
+        instrument_type: "OPTION",
+        option_type: "CALL",
+        strike_rate: 1.085,
+        expiry_date: "2027-07-30",
+        delivery_date: "2027-08-02",
+        premium_date: "2026-08-19",
+        premium: 12500,
+        premium_currency: "USD",
+        exercise_style: "EUROPEAN",
+      },
+    };
+    renderBlotter({ trades: [optionTrade] });
+    const row = within(screen.getByRole("row", { name: /abc-123/ }));
+    expect(row.getByText("CALL")).toBeInTheDocument();
+    expect(row.getByText("2027-07-30")).toBeInTheDocument(); // expiry
+    expect(row.getByText("2027-08-02")).toBeInTheDocument(); // delivery
+    expect(row.getByText("2026-08-19")).toBeInTheDocument(); // premium date
+    expect(row.getByText("12,500")).toBeInTheDocument(); // premium
+    expect(row.getAllByText("USD").length).toBeGreaterThanOrEqual(2); // currency 2 + premium ccy
+    expect(row.getByText("EUROPEAN")).toBeInTheDocument(); // exercise style
+    expect(row.getByText("1M EUR call USD put at 1.085")).toBeInTheDocument(); // comment
   });
 
   it("shows an error when the request fails", () => {

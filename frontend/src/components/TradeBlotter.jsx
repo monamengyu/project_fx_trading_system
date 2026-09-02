@@ -169,7 +169,15 @@ export function TradeBlotter({
             <th>Type</th>
             <th>Pair</th>
             <th>Direction</th>
+            <th>Trade Date</th>
             <th>Rate</th>
+            <th>Option</th>
+            <th>Expiry</th>
+            <th>Delivery</th>
+            <th>Premium Date</th>
+            <th>Premium</th>
+            <th>Premium Ccy</th>
+            <th>Exercise</th>
             <th>Currency 1</th>
             <th>Notional 1</th>
             <th>Currency 2</th>
@@ -177,35 +185,40 @@ export function TradeBlotter({
             <th>Settlement</th>
             <th>Counterparty</th>
             <th>Status</th>
+            <th>Comment</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {trades.map((trade) => (
+          {trades.map((trade) => {
+            const details = trade.instrument_details ?? {};
+            return (
             <tr key={trade.trade_id}>
               <td className="blotter__id">{trade.trade_id}</td>
               <td>{trade.instrument_type}</td>
               <td>{trade.currency_pair}</td>
               <td>{trade.direction}</td>
+              <td>{trade.trade_date ?? "—"}</td>
               <td>
-                {formatRate(
-                  trade.instrument_details?.strike_rate ??
-                    trade.instrument_details?.rate,
-                ) ?? "—"}
+                {formatRate(details.strike_rate ?? details.rate) ?? "—"}
               </td>
+              <td>{details.option_type ?? "—"}</td>
+              <td>{details.expiry_date ?? "—"}</td>
+              <td>{details.delivery_date ?? "—"}</td>
+              <td>{details.premium_date ?? "—"}</td>
+              <td>{formatNumber(details.premium) ?? "—"}</td>
+              <td>{details.premium_currency ?? "—"}</td>
+              <td>{details.exercise_style ?? "—"}</td>
               <td>{trade.currency_1}</td>
               <td>{formatNumber(trade.notional_1) ?? "—"}</td>
               <td>{trade.currency_2}</td>
               <td>{formatNumber(notional2For(trade)) ?? "—"}</td>
-              <td>
-                {trade.instrument_details?.expiry_date ??
-                  trade.instrument_details?.settlement_date ??
-                  "—"}
-              </td>
+              <td>{details.settlement_date ?? "—"}</td>
               <td>{trade.counterparty}</td>
               <td>
                 <StatusBadge status={trade.status} />
               </td>
+              <td>{trade.comment || "—"}</td>
               <td className="blotter__actions">
                 {trade.status === "PENDING_CONFIRMATION" && (
                   <button
@@ -237,7 +250,8 @@ export function TradeBlotter({
                 )}
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>

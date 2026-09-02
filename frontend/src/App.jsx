@@ -16,8 +16,7 @@ export default function App() {
       <Layout
         topLeft={<MarketRatesPanel />}
         topCenter={<PositionsPanel />}
-        topRight={<NewTradeForm onBooked={refresh} />}
-        bottomLeft={
+        main={
           <TradeBlotter
             trades={trades}
             loading={loading}
@@ -27,7 +26,8 @@ export default function App() {
             setFilters={setFilters}
           />
         }
-        bottomRight={<NlTradeEntry onBooked={refresh} />}
+        sideTop={<NewTradeForm onBooked={refresh} />}
+        sideBottom={<NlTradeEntry onBooked={refresh} />}
       />
     </div>
   );

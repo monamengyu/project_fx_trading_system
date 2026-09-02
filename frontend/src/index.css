@@ -95,7 +95,9 @@ body {
   vertical-align: middle;
 }
 
-/* --- Three-panel layout -------------------------------------------------- */
+/* --- Trading dashboard layout -------------------------------------------- */
+/* Left column : market data | positions on top, trade blotter filling the rest.
+   Right rail  : new-trade form above natural-language entry (same width).   */
 
 .app {
   height: 100vh;
@@ -107,35 +109,50 @@ body {
   flex: 1;
   min-height: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 16px;
   padding: 16px;
 }
 
-.layout__top {
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 340px;
-  gap: 16px;
-  min-height: 0;
-}
-
-.layout__bottom {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  gap: 16px;
-  overflow: hidden;
-}
-
-.layout__bottom-main {
+.layout__main {
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.layout__bottom-side {
-  flex: 0 0 360px;
+.layout__top {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 16px;
+}
+
+.layout__blotter {
+  flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
+  display: flex;
+}
+
+.layout__blotter > .panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.layout__rail {
+  flex: 0 0 360px;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.layout__rail > .panel {
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .panel {
@@ -384,11 +401,30 @@ body {
 
 @media (max-width: 1100px) {
   .layout {
+    flex-direction: column;
     overflow-y: auto;
+  }
+
+  .layout__main {
+    flex: 0 0 auto;
   }
 
   .layout__top {
     grid-template-columns: 1fr;
+  }
+
+  .layout__blotter {
+    flex: 0 0 auto;
+  }
+
+  .layout__rail {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+
+  .layout__rail > .panel {
+    flex: 0 0 auto;
+    min-height: 0;
   }
 }
 

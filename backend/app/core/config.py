@@ -26,6 +26,8 @@ class Settings(BaseSettings):
         "openai/gpt-4o",
         "anthropic/claude-sonnet-4-5",
         "google/gemini-2.0-flash-001",
+        "deepseek/deepseek-v4-flash-0731",
+        "z-ai/glm-5.3-flash",
     ]
     ollama_base_url: str = "http://localhost:11434/v1"
     # Local Ollama model IDs offered in the NL parse dropdown (JSON list in .env)

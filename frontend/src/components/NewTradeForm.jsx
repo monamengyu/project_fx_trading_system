@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useBookTrade } from "../hooks/useBookTrade.js";
 import { useMarketRates } from "../hooks/useMarketRates.js";
+import { quoteOption } from "../services/pricing.js";
 import {
   addBusinessDays,
   isBusinessDay,
@@ -194,6 +195,7 @@ export function NewTradeForm({ onBooked }) {
   const [rateTouched, setRateTouched] = useState(false);
   const [strikeTouched, setStrikeTouched] = useState(false);
   const [deliveryTouched, setDeliveryTouched] = useState(false);
+  const [premiumTouched, setPremiumTouched] = useState(false);
   const { submit, submitting, result, error } = useBookTrade();
   const { rates } = useMarketRates();
 
@@ -218,8 +220,14 @@ export function NewTradeForm({ onBooked }) {
   }
 
   function handlePairChange(value) {
-    setForm((prev) => ({ ...prev, currency_pair: value }));
+    setForm((prev) => ({
+      ...prev,
+      currency_pair: value,
+      // The premium currency follows the pair's quote currency.
+      premium_currency: value.slice(3),
+    }));
     setRateTouched(false); // re-default to the new pair's market rate
+    setPremiumTouched(false); // re-quote the premium for the new pair
     setFormError(null);
   }
 
@@ -228,6 +236,7 @@ export function NewTradeForm({ onBooked }) {
     setRateTouched(false); // re-default to the market rate (SPOT or FORWARD)
     setStrikeTouched(false);
     setDeliveryTouched(false); // re-derive delivery from the default expiry
+    setPremiumTouched(false); // re-quote the premium when (re)entering OPTION
     setFormError(null);
   }
 
@@ -243,6 +252,7 @@ export function NewTradeForm({ onBooked }) {
     const formatted = formatInput(cleaned);
     if (field === "rate") setRateTouched(true); // don't overwrite a manual rate
     if (field === "strike_rate") setStrikeTouched(true); // don't overwrite a manual strike
+    if (field === "premium") setPremiumTouched(true); // don't overwrite a manual premium
     setForm((prev) => ({ ...prev, [field]: formatted }));
     setFormError(null);
     // Keep the caret where the user was typing after grouping commas.
@@ -295,6 +305,7 @@ export function NewTradeForm({ onBooked }) {
       setRateTouched(false);
       setStrikeTouched(false);
       setDeliveryTouched(false);
+      setPremiumTouched(false);
       setReview(null);
       onBooked?.(trade);
     }
@@ -303,6 +314,52 @@ export function NewTradeForm({ onBooked }) {
   const suggest = suggestedType(form);
 
   const isOption = form.instrument_type === "OPTION";
+
+  // Auto-fill the option premium from the live pricing model once the option
+  // details are complete, unless the user has manually edited the premium.
+  // The quote is debounced so typing the notional/strike does not fire a
+  // request per keystroke.
+  useEffect(() => {
+    if (!isOption || premiumTouched) return;
+    const notional = toNumber(form.notional_1);
+    const strike = toNumber(form.strike_rate);
+    if (!(notional > 0) || !(strike > 0) || !form.expiry_date) return;
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const quote = await quoteOption({
+          currency_pair: form.currency_pair,
+          option_type: form.option_type,
+          strike_rate: strike,
+          expiry_date: form.expiry_date,
+          notional_1: notional,
+          vol: 0.1,
+        });
+        if (cancelled) return;
+        setForm((prev) => ({
+          ...prev,
+          // total_premium is the full premium in the pair's quote currency.
+          premium: formatInput(Number(quote.total_premium).toFixed(2)),
+          premium_currency: form.currency_pair.slice(3),
+        }));
+      } catch {
+        // Pricing may be unavailable (e.g. market data down); keep the premium.
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    isOption,
+    form.currency_pair,
+    form.option_type,
+    form.notional_1,
+    form.strike_rate,
+    form.expiry_date,
+    premiumTouched,
+  ]);
 
   if (review) {
     const details = review.instrument_details;
@@ -580,6 +637,10 @@ export function NewTradeForm({ onBooked }) {
                   onChange={(e) => handleNumericInput("premium", e)}
                   required
                 />
+                <p className="field__hint">
+                  Auto-fills from live option pricing in{" "}
+                  {form.currency_pair.slice(3)}; you can edit it.
+                </p>
               </div>
               <div className="field">
                 <label className="field__label" htmlFor="premium_currency">

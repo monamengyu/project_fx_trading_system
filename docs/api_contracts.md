@@ -289,3 +289,63 @@ Models: `rule-based` (baseline, always), one entry per ID in the
 `google/gemini-2.0-flash-001` — listed only when `OPENROUTER_API_KEY` is set,
 and one entry per ID in the `OLLAMA_MODELS` env list (local, always). Missing rates are resolved from the live market rate; missing
 option fields get defaults (premium 0, delivery = expiry, EUROPEAN style).
+
+---
+
+## Pricing & Analytics
+
+### `POST /pricing/options`
+Live Garman-Kohlhagen quote for an FX option built from raw trade terms,
+priced at the current (Frankfurter) spot rate with a fixed 10% volatility and
+valuation at today's date. These are the same conventions as the position MTM,
+so a premium auto-filled from this endpoint matches the premium used when the
+option is later revalued in positions. No trade is persisted.
+
+`premium` is the per-unit premium in the pair's quote currency
+(`currency_2`, e.g. USD for EURUSD). `total_premium` is the full premium for
+`notional_1`, i.e. `notional_1 × premium`, in `premium_currency` (`currency_2`).
+
+**Request**
+```json
+{
+  "currency_pair": "EURUSD",
+  "option_type": "CALL",
+  "strike_rate": 1.085,
+  "expiry_date": "2026-12-18",
+  "notional_1": 1000000,
+  "vol": 0.10
+}
+```
+`vol` is optional (default `0.10`).
+
+**Response `200 OK`**
+```json
+{
+  "currency_pair": "EURUSD",
+  "option_type": "CALL",
+  "premium": 0.013,
+  "premium_currency": "USD",
+  "total_premium": 13000.0,
+  "spot": 1.0862,
+  "strike_rate": 1.085,
+  "expiry_date": "2026-12-18",
+  "valuation_date": "2026-08-14",
+  "tenor_years": 0.35,
+  "vol": 0.1,
+  "greeks": {
+    "delta": 0.52,
+    "gamma": 4.5,
+    "vega": 0.12,
+    "theta": -0.00045
+  }
+}
+```
+
+`greeks` follow the position conventions: `delta` in unit terms
+(`±notional_1 × delta` gives the `currency_1` exposure), `gamma` per 1% move
+(divide by 100 for the delta change), `vega` per 1 vol point in `currency_2`,
+and `theta` per year (divide by 365 for the per-day decay).
+
+**Response `422 Unprocessable Entity`** if the expiry date is already passed
+or a field fails validation (`strike_rate`/`notional_1`/`vol` must be `> 0`).
+**Response `502 Bad Gateway`** if the upstream Frankfurter rate request fails.

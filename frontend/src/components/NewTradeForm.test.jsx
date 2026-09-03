@@ -1,10 +1,25 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { NewTradeForm } from "./NewTradeForm.jsx";
 import userEvent from "@testing-library/user-event";
 import { bookTrade } from "../services/trades.js";
+import { quoteOption } from "../services/pricing.js";
 import { addBusinessDays, toISODate, todayISO } from "../utils/date.js";
 
 vi.mock("../services/trades.js", () => ({ bookTrade: vi.fn() }));
+vi.mock("../services/pricing.js", () => ({ quoteOption: vi.fn() }));
+
+// Default quote the form receives from the mocked pricing service: a 1,000,000
+// EURUSD CALL priced at 0.0265 per unit => 26,500.00 total premium.
+const DEFAULT_QUOTE = {
+  currency_pair: "EURUSD",
+  option_type: "CALL",
+  premium: 0.0265,
+  premium_currency: "USD",
+  total_premium: 26500,
+  spot: 1.085,
+  strike_rate: 1.085,
+  vol: 0.1,
+};
 
 const mockRates = {
   EURUSD: { pair: "EURUSD", rate: 1.085, as_of: "2026-08-19" },
@@ -42,6 +57,8 @@ function setSettlement(date) {
 describe("NewTradeForm", () => {
   beforeEach(() => {
     bookTrade.mockReset();
+    quoteOption.mockReset();
+    quoteOption.mockResolvedValue(DEFAULT_QUOTE);
   });
 
   it("shows a confirmation review before booking (SPOT)", async () => {
@@ -333,6 +350,9 @@ describe("NewTradeForm", () => {
 
       setType("OPTION");
       setOptionType("CALL");
+      await waitFor(() =>
+        expect(screen.getByLabelText("Premium").value).toBe("26,500.00"),
+      );
       await reviewDefault(user);
       await user.click(screen.getByRole("button", { name: "Confirm & Book" }));
 
@@ -348,7 +368,7 @@ describe("NewTradeForm", () => {
         ),
         expiry_date: defaultExpiry,
         delivery_date: defaultDelivery,
-        premium: 0,
+        premium: 26500,
         premium_currency: "USD",
         exercise_style: "EUROPEAN",
       });
@@ -410,6 +430,100 @@ describe("NewTradeForm", () => {
       expect(
         screen.queryByRole("heading", { name: "Confirm Trade" }),
       ).not.toBeInTheDocument();
+    });
+
+    it("auto-fills the premium from the live option quote", async () => {
+      render(<NewTradeForm onBooked={vi.fn()} />);
+      setType("OPTION");
+
+      await waitFor(() =>
+        expect(screen.getByLabelText("Premium").value).toBe("26,500.00"),
+      );
+      expect(screen.getByLabelText("Premium Currency").value).toBe("USD");
+      expect(quoteOption).toHaveBeenCalledWith({
+        currency_pair: "EURUSD",
+        option_type: "CALL",
+        strike_rate: 1.085,
+        expiry_date: defaultExpiry,
+        notional_1: 1000000,
+        vol: 0.1,
+      });
+    });
+
+    it("auto-sets the premium currency to the pair's quote currency", async () => {
+      render(<NewTradeForm onBooked={vi.fn()} />);
+      fireEvent.change(screen.getByLabelText("Currency Pair"), {
+        target: { value: "USDJPY" },
+      });
+      setType("OPTION");
+
+      await waitFor(() =>
+        expect(quoteOption).toHaveBeenCalledWith(
+          expect.objectContaining({ currency_pair: "USDJPY" }),
+        ),
+      );
+      expect(screen.getByLabelText("Premium Currency").value).toBe("JPY");
+    });
+
+    it("re-quotes the premium when the notional changes", async () => {
+      render(<NewTradeForm onBooked={vi.fn()} />);
+      setType("OPTION");
+      await waitFor(() =>
+        expect(screen.getByLabelText("Premium").value).toBe("26,500.00"),
+      );
+
+      quoteOption.mockClear();
+      quoteOption.mockResolvedValue({ ...DEFAULT_QUOTE, total_premium: 53000 });
+      fireEvent.change(screen.getByLabelText("Notional (EUR)"), {
+        target: { value: "2,000,000" },
+      });
+
+      await waitFor(() =>
+        expect(screen.getByLabelText("Premium").value).toBe("53,000.00"),
+      );
+      expect(quoteOption).toHaveBeenCalledWith(
+        expect.objectContaining({ notional_1: 2000000 }),
+      );
+    });
+
+    it("keeps a manually entered premium and stops auto-fill", async () => {
+      render(<NewTradeForm onBooked={vi.fn()} />);
+      setType("OPTION");
+      await waitFor(() =>
+        expect(screen.getByLabelText("Premium").value).toBe("26,500.00"),
+      );
+
+      quoteOption.mockClear();
+      fireEvent.change(screen.getByLabelText("Premium"), {
+        target: { value: "50,000" },
+      });
+      expect(screen.getByLabelText("Premium").value).toBe("50,000");
+
+      // Changing the notional must not overwrite the manual premium.
+      fireEvent.change(screen.getByLabelText("Notional (EUR)"), {
+        target: { value: "2,000,000" },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(screen.getByLabelText("Premium").value).toBe("50,000");
+      expect(quoteOption).not.toHaveBeenCalled();
+    });
+
+    it("re-enables premium auto-fill after switching instrument type", async () => {
+      render(<NewTradeForm onBooked={vi.fn()} />);
+      setType("OPTION");
+      await waitFor(() =>
+        expect(screen.getByLabelText("Premium").value).toBe("26,500.00"),
+      );
+
+      fireEvent.change(screen.getByLabelText("Premium"), {
+        target: { value: "50,000" },
+      });
+      setType("SPOT");
+      setType("OPTION");
+
+      await waitFor(() =>
+        expect(screen.getByLabelText("Premium").value).toBe("26,500.00"),
+      );
     });
   });
 });

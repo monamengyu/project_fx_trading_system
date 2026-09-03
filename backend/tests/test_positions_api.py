@@ -258,9 +258,17 @@ async def test_positions_option_leg_repriced_with_greeks_and_usd_mtm(client):
     )
     notional = 1000000
     assert eurusd["delta"] == pytest.approx(round(notional * priced.greeks.delta, 2))
-    assert eurusd["gamma"] == pytest.approx(round(notional * priced.greeks.gamma, 2))
-    assert eurusd["vega"] == pytest.approx(round(notional * priced.greeks.vega, 2))
-    assert eurusd["theta"] == pytest.approx(round(notional * priced.greeks.theta, 2))
+    # gamma/vega are reported per 1% move, so the model's per-one-unit
+    # quantity is divided by 100 (mirrors the router scaling).
+    assert eurusd["gamma"] == pytest.approx(
+        round(notional * priced.greeks.gamma / 100.0, 2)
+    )
+    assert eurusd["vega"] == pytest.approx(
+        round(notional * priced.greeks.vega / 100.0, 2)
+    )
+    assert eurusd["theta"] == pytest.approx(
+        round(notional * priced.greeks.theta / 365.0, 2)
+    )
     # premium paid (25,000 USD) was below the current premium -> positive P&L
     expected_mtm = round(notional * priced.premium - 25000.0, 2)
     assert eurusd["mtm_value"] == pytest.approx(expected_mtm)

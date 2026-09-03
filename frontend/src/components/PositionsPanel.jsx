@@ -30,10 +30,10 @@ export function PositionsPanel() {
         <thead>
           <tr>
             <th>Pair</th>
-            <th>Delta</th>
-            <th>Gamma</th>
-            <th>Vega</th>
-            <th>Theta</th>
+            <th>Delta (c1)</th>
+            <th>Gamma (% c1)</th>
+            <th>Vega (% c2)</th>
+            <th>Theta (c2/day)</th>
             <th>MTM (USD)</th>
           </tr>
         </thead>

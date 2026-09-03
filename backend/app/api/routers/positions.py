@@ -4,6 +4,21 @@ Aggregates confirmed (BOOKED) trades per currency pair and reports the net
 position: notional totals, option greeks and the unrealised P&L (mark to
 market) in USD.
 
+Greek conventions
+-----------------
+Greeks are net across all BOOKED legs and use the following units:
+
+* ``delta`` is the signed ``currency_1`` exposure: ``±notional_1`` for
+  spot/forward legs and ``±notional_1 * unit delta`` for option legs, so it
+  is expressed in ``currency_1``.
+* ``gamma`` is the change in that ``currency_1`` delta per 1% move in the
+  rate, so it is ``±notional_1 * unit gamma / 100`` (the model's gamma is
+  per one-unit rate move).
+* ``vega`` is the premium sensitivity per 1 vol point (1%), so it is
+  ``±notional_1 * unit vega / 100`` and is expressed in ``currency_2``.
+* ``theta`` is the per-day time decay, ``±notional_1 * unit theta / 365`` and
+  is expressed in ``currency_2``.
+
 MTM semantics
 -------------
 For each leg the P&L is the current market value minus the executed (booked)
@@ -122,9 +137,12 @@ async def list_positions(db: AsyncSession = Depends(get_db)) -> list[PositionRea
                 continue
             greeks = priced.greeks
             agg["delta"] += signed * notional_1 * greeks.delta
-            agg["gamma"] += signed * notional_1 * greeks.gamma
-            agg["vega"] += signed * notional_1 * greeks.vega
-            agg["theta"] += signed * notional_1 * greeks.theta
+            # gamma/vega are per 1% move (per vol point): divide the model's
+            # per-one-unit quantities by 100.
+            agg["gamma"] += signed * notional_1 * greeks.gamma / 100.0
+            agg["vega"] += signed * notional_1 * greeks.vega / 100.0
+            # theta is the per-day decay: the model's per-year quantity / 365.
+            agg["theta"] += signed * notional_1 * greeks.theta / 365.0
             current_usd = _to_usd(priced.premium * notional_1, currency_2, rate)
             agg["pnl_usd"] += signed * (current_usd - executed_usd)
             continue

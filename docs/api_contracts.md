@@ -169,7 +169,11 @@ Amend a booked trade (notional and/or comment). The trade's `status` stays `BOOK
 ## Positions
 
 ### `GET /positions`
-Position summary per currency pair, aggregated from confirmed (`BOOKED`) trades. Both currency legs are always reported: `*_notional_1` in `currency_1`, `*_notional_2` in `currency_2`. `net_notional_*` is BUY notional − SELL notional. The currency_2 leg uses a trade's explicit `notional_2` when present, otherwise it is derived as `notional_1 × rate`; if the rate is unavailable and no explicit `notional_2` exists, the currency_2 fields are `null`. `mtm_value` marks the net position to market using the current rate (in currency_2), and is `null` if the rate is unavailable.
+Position summary per currency pair, aggregated from confirmed (`BOOKED`) trades. `*_notional_1` is the aggregate in `currency_1` and `*_notional_2` in `currency_2`; `net_*` is BUY notional − SELL notional. Option legs contribute their contract notional to the currency_1 side only (they have no currency_2 notional). The currency_2 leg of a spot/forward trade uses its explicit `notional_2` when present, otherwise it is derived as `notional_1 × live rate`; if the rate is unavailable and no explicit `notional_2` exists, the currency_2 fields are `null`.
+
+Greek columns (`delta`, `gamma`, `vega`, `theta`) are net across all BOOKED legs. `delta` is the signed currency_1 exposure: `±notional_1` for spot/forward legs and `±notional_1 × unit delta` for option legs (repriced at the live spot with 10% volatility). `gamma`, `vega` and `theta` are only produced by option legs (0.0 when the pair holds no options, `null` when an option cannot be priced).
+
+`mtm_value` is the unrealised P&L in USD, i.e. current market value minus the executed (booked) value normalised to USD: `±notional_1 × (live rate − booked rate)` for spot/forward legs (converted to USD), and `±notional_1 × (repriced premium − paid premium)` for option legs. It is `null` if the live rate is unavailable or an option cannot be priced.
 
 **Response `200 OK`**
 ```json
@@ -178,12 +182,15 @@ Position summary per currency pair, aggregated from confirmed (`BOOKED`) trades.
     "currency_pair": "EURUSD",
     "currency_1": "EUR",
     "currency_2": "USD",
-    "count": 2,
     "total_notional_1": 1400000.0,
     "total_notional_2": 1610000.0,
     "net_notional_1": 600000.0,
     "net_notional_2": 690000.0,
-    "mtm_value": 690000.0
+    "delta": 600000.0,
+    "gamma": 0.0,
+    "vega": 0.0,
+    "theta": 0.0,
+    "mtm_value": 39000.0
   }
 ]
 ```

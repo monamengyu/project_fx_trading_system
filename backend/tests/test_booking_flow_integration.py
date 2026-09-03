@@ -148,7 +148,9 @@ async def test_full_spot_booking_lifecycle(client):
     ]
     after_confirm = await _eurusd_position(client)
     assert after_confirm is not None
-    assert after_confirm["count"] == (baseline["count"] if baseline else 0) + 1
+    baseline_net = baseline["net_notional_1"] if baseline else 0.0
+    # a BUY of 1,000,000 EUR increases the net EUR position by that amount
+    assert after_confirm["net_notional_1"] == pytest.approx(baseline_net + 1_000_000)
     assert after_confirm["currency_1"] == "EUR"
     assert after_confirm["currency_2"] == "USD"
 
@@ -178,9 +180,9 @@ async def test_full_spot_booking_lifecycle(client):
         "CANCELLED",
     ]
     after_cancel = await _eurusd_position(client)
-    assert (after_cancel["count"] if after_cancel else 0) == (
-        baseline["count"] if baseline else 0
-    )
+    # cancelling the trade restores the net position to its baseline
+    after_net = after_cancel["net_notional_1"] if after_cancel else 0.0
+    assert after_net == pytest.approx(baseline_net)
 
 
 async def test_forward_booking_lifecycle(client):
@@ -197,7 +199,9 @@ async def test_forward_booking_lifecycle(client):
     assert confirmed.json()["status"] == "BOOKED"
 
     position = await _eurusd_position(client)
-    assert position["count"] == (baseline["count"] if baseline else 0) + 1
+    baseline_delta = baseline["delta"] if baseline else 0.0
+    # a BUY of 1,000,000 EUR increases delta (signed notional) by that amount
+    assert position["delta"] == pytest.approx(baseline_delta + 1_000_000)
     # a BUY of 1,000,000 EUR increases the net EUR position by that amount
     assert position["net_notional_1"] == pytest.approx(baseline_net + 1_000_000)
 

@@ -30,25 +30,21 @@ export function PositionsPanel() {
         <thead>
           <tr>
             <th>Pair</th>
-            <th>Trades</th>
-            <th>Net (c1)</th>
-            <th>Net (c2)</th>
-            <th>MTM</th>
+            <th>Delta</th>
+            <th>Gamma</th>
+            <th>Vega</th>
+            <th>Theta</th>
+            <th>MTM (USD)</th>
           </tr>
         </thead>
         <tbody>
           {positions.map((position) => (
             <tr key={position.currency_pair}>
               <td>{position.currency_pair}</td>
-              <td>{position.count}</td>
-              <td>
-                {formatNumber(position.net_notional_1)} {position.currency_1}
-              </td>
-              <td>
-                {position.net_notional_2 != null
-                  ? `${formatNumber(position.net_notional_2)} ${position.currency_2}`
-                  : "—"}
-              </td>
+              <td>{position.delta != null ? formatNumber(position.delta) : "—"}</td>
+              <td>{position.gamma != null ? formatNumber(position.gamma) : "—"}</td>
+              <td>{position.vega != null ? formatNumber(position.vega) : "—"}</td>
+              <td>{position.theta != null ? formatNumber(position.theta) : "—"}</td>
               <td>
                 {position.mtm_value != null ? formatNumber(position.mtm_value) : "—"}
               </td>

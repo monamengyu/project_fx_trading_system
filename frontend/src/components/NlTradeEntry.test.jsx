@@ -87,7 +87,29 @@ describe("NlTradeEntry", () => {
     await user.click(screen.getByRole("button", { name: "Confirm & Book" }));
 
     await waitFor(() => expect(bookTrade).toHaveBeenCalled());
-    expect(bookTrade.mock.calls[0][0]).toEqual(PARSED.trade);
+    expect(bookTrade.mock.calls[0][0]).toEqual({
+      ...PARSED.trade,
+      comment: "Buy 1 million euros against dollars, spot at 1.085",
+    });
+    expect(onBooked).toHaveBeenCalledTimes(1);
+  });
+
+  it("stores the instruction text as the trade comment", async () => {
+    parseTrade.mockResolvedValue(PARSED);
+    bookTrade.mockResolvedValue({ trade_id: "t1", currency_pair: "EURUSD" });
+    const onBooked = vi.fn();
+    const user = userEvent.setup();
+    render(<NlTradeEntry onBooked={onBooked} />);
+
+    fireEvent.change(screen.getByLabelText("Instruction"), {
+      target: { value: "Sell 500k EURUSD forward at 1.09" },
+    });
+    await user.click(screen.getByRole("button", { name: "Parse & Review" }));
+    await waitFor(() => screen.getByRole("heading", { name: "Review Parsed Trade" }));
+    await user.click(screen.getByRole("button", { name: "Confirm & Book" }));
+
+    await waitFor(() => expect(bookTrade).toHaveBeenCalled());
+    expect(bookTrade.mock.calls[0][0].comment).toBe("Sell 500k EURUSD forward at 1.09");
     expect(onBooked).toHaveBeenCalledTimes(1);
   });
 });

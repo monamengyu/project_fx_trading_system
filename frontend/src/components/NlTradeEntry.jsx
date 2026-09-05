@@ -49,7 +49,9 @@ export function NlTradeEntry({ onBooked }) {
   }
 
   async function handleConfirm() {
-    const trade = await submit(result.trade);
+    // Preserve the original instruction as the trade's comment so the blotter
+    // shows exactly what the trader asked for.
+    const trade = await submit({ ...result.trade, comment: text });
     if (trade) {
       clear();
       setText("");

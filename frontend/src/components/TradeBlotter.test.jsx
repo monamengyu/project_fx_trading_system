@@ -199,4 +199,124 @@ describe("TradeBlotter", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     expect(setFilters).toHaveBeenCalledWith({});
   });
+
+  it("places the Comment column last, after Actions", () => {
+    renderBlotter({ trades: [trade] });
+    const headers = screen.getAllByRole("columnheader").map((th) => th.textContent);
+    expect(headers[headers.length - 1]).toBe("Comment");
+    expect(headers[headers.length - 2]).toBe("Actions");
+  });
+
+  it("opens the amend dialog from a BOOKED trade with prefilled fields", () => {
+    renderBlotter({ trades: [trade] });
+    fireEvent.click(screen.getByRole("button", { name: "Amend" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByRole("heading", { name: "Amend Trade" }),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Currency Pair")).toHaveValue("EURUSD");
+    expect(within(dialog).getByLabelText("Notional 1")).toHaveValue("1,000,000");
+    expect(within(dialog).getByLabelText("Notional 2")).toHaveValue("1,085,000");
+    expect(within(dialog).getByLabelText("Rate")).toHaveValue("1.085");
+    expect(within(dialog).getByLabelText("Settlement Date")).toHaveValue("2026-08-19");
+    // The Save button stays disabled until something actually changes.
+    expect(within(dialog).getByRole("button", { name: "Save Changes" })).toBeDisabled();
+  });
+
+  it("opens the amend dialog for an OPTION with derived Notional 2 and formatted premium", () => {
+    const optionTrade = {
+      ...trade,
+      instrument_type: "OPTION",
+      notional_2: undefined,
+      instrument_details: {
+        instrument_type: "OPTION",
+        option_type: "CALL",
+        strike_rate: 1.085,
+        expiry_date: "2027-07-30",
+        delivery_date: "2027-08-02",
+        premium_date: "2026-08-19",
+        premium: 12500,
+        premium_currency: "USD",
+        exercise_style: "EUROPEAN",
+      },
+    };
+    renderBlotter({ trades: [optionTrade] });
+    fireEvent.click(screen.getByRole("button", { name: "Amend" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByLabelText("Notional 1")).toHaveValue("1,000,000");
+    expect(within(dialog).getByLabelText("Notional 2")).toHaveValue("1,085,000");
+    expect(within(dialog).getByLabelText("Strike Rate")).toHaveValue("1.085");
+    expect(within(dialog).getByLabelText("Premium")).toHaveValue("12,500");
+  });
+
+  it("derives Notional 1 when Notional 2 is edited (inverse of rate)", () => {
+    renderBlotter({ trades: [trade] });
+    fireEvent.click(screen.getByRole("button", { name: "Amend" }));
+    const dialog = screen.getByRole("dialog");
+
+    fireEvent.change(within(dialog).getByLabelText("Notional 2"), {
+      target: { value: "1,000,000" },
+    });
+    expect(within(dialog).getByLabelText("Notional 1")).toHaveValue("921,658.99");
+    expect(
+      within(dialog).getByRole("button", { name: "Save Changes" }),
+    ).toBeEnabled();
+  });
+
+  it("shows no Amend action for trades that are not BOOKED", () => {
+    renderBlotter({ trades: [{ ...trade, status: "PENDING_CONFIRMATION" }] });
+    expect(screen.queryByRole("button", { name: "Amend" })).not.toBeInTheDocument();
+  });
+
+  it("saves amended trade details and refreshes", async () => {
+    amendTrade.mockResolvedValue({ trade_id: "abc-123" });
+    const onRefresh = vi.fn();
+    renderBlotter({ trades: [trade], onRefresh });
+
+    fireEvent.click(screen.getByRole("button", { name: "Amend" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Notional 1"), {
+      target: { value: "2,000,000" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Direction"), {
+      target: { value: "SELL" },
+    });
+
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Save Changes" }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save Changes" }));
+
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+    expect(amendTrade).toHaveBeenCalledWith("abc-123", {
+      currency_pair: "EURUSD",
+      direction: "SELL",
+      counterparty: "BANK_A",
+      notional_1: 2000000,
+      notional_2: 2170000,
+      comment: "",
+      instrument_details: {
+        instrument_type: "SPOT",
+        rate: 1.085,
+        settlement_date: "2026-08-19",
+      },
+    });
+    // The dialog closes after a successful save.
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("closes the amend dialog without saving on Cancel", () => {
+    renderBlotter({ trades: [trade] });
+    fireEvent.click(screen.getByRole("button", { name: "Amend" }));
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }),
+    );
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(amendTrade).not.toHaveBeenCalled();
+  });
 });

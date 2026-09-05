@@ -66,19 +66,33 @@ class TradeCancelRequest(BaseModel):
 
 
 class TradeAmendRequest(BaseModel):
+    # instrument_type is structural (it selects the details schema) and cannot be
+    # changed via an amend; the other trade fields may all be edited.
+    currency_pair: Optional[CurrencyPair] = None
+    direction: Optional[Direction] = None
+    counterparty: Optional[str] = None
     notional_1: Optional[float] = None
     notional_2: Optional[float] = None
+    instrument_details: Optional[InstrumentDetails] = None
     comment: Optional[str] = None
 
     @model_validator(mode="after")
     def require_at_least_one_change(self):
-        if (
-            self.notional_1 is None
-            and self.notional_2 is None
-            and self.comment is None
+        if all(
+            field is None
+            for field in (
+                self.currency_pair,
+                self.direction,
+                self.counterparty,
+                self.notional_1,
+                self.notional_2,
+                self.instrument_details,
+                self.comment,
+            )
         ):
             raise ValueError(
-                "amend requires at least one of notional_1, notional_2 or comment"
+                "amend requires at least one of currency_pair, direction, "
+                "counterparty, notional_1, notional_2, instrument_details or comment"
             )
         return self
 

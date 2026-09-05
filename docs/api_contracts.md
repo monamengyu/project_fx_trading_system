@@ -152,17 +152,30 @@ Confirm a pending trade: `status` becomes `BOOKED` and a `BOOKED` entry is appen
 **Response `409 Conflict`** if the trade is not `PENDING_CONFIRMATION`
 
 ### `POST /trades/{trade_id}/amend`
-Amend a booked trade (notional and/or comment). The trade's `status` stays `BOOKED` and an `AMENDED` entry is appended to the lifecycle log.
+Amend a booked trade. All trade economics except `instrument_type` may be edited: `currency_pair`, `direction`, `counterparty`, `notional_1`, the type-specific `instrument_details`, and `comment`. The trade's `status` stays `BOOKED` and an `AMENDED` entry is appended to the lifecycle log.
 
-**Request** (at least one field required)
+`instrument_type` is structural (it selects the details schema) and cannot be changed via an amend. `currency_pair`, `direction`, `counterparty`, `notional_1`, `notional_2`, `instrument_details` and `comment` are all optional, but at least one must be provided. When `currency_pair` changes, `currency_1`/`currency_2` are re-derived from the pair. For SPOT/FORWARD trades `notional_2` is kept consistent with `notional_1 × rate` unless `notional_2` is supplied explicitly. The settlement-date rules from booking apply when `instrument_details.settlement_date` changes (SPOT must settle within the trade's own 2-business-day spot window; FORWARD after it).
+
+**Request** (all fields optional; at least one required)
 ```json
-{ "notional_1": 2000000, "comment": "increased size" }
+{
+  "currency_pair": "GBPUSD",
+  "direction": "SELL",
+  "counterparty": "BANK_B",
+  "notional_1": 2000000,
+  "comment": "increased size",
+  "instrument_details": {
+    "instrument_type": "SPOT",
+    "rate": 1.25,
+    "settlement_date": "2026-08-03"
+  }
+}
 ```
 
 **Response `200 OK`**: full trade object with the amended fields
 **Response `404 Not Found`** if `trade_id` doesn't exist
 **Response `409 Conflict`** if the trade is not `BOOKED`
-**Response `422 Unprocessable Entity`** if the body is empty
+**Response `422 Unprocessable Entity`** if the body is empty, `instrument_details.instrument_type` doesn't match the trade's `instrument_type`, or the new settlement date violates the settlement-date rule
 
 ---
 

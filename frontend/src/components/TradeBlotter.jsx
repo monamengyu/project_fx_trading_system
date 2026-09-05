@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { StatusBadge } from "./StatusBadge.jsx";
 import { DateRangePicker } from "./DateRangePicker.jsx";
-import { amendTrade, cancelTrade, confirmTrade } from "../services/trades.js";
+import { AmendTradeDialog } from "./AmendTradeDialog.jsx";
+import { cancelTrade, confirmTrade } from "../services/trades.js";
 
 const STATUSES = ["PENDING_CONFIRMATION", "BOOKED", "CANCELLED", "MATURED"];
 const PAIRS = ["EURUSD", "GBPUSD", "USDJPY"];
@@ -50,6 +51,7 @@ export function TradeBlotter({
   setFilters,
 }) {
   const [busyId, setBusyId] = useState(null);
+  const [amending, setAmending] = useState(null); // trade being amended
   const [draft, setDraft] = useState(filters ?? {});
 
   // Keep the blotter fresh without user interaction.
@@ -80,10 +82,8 @@ export function TradeBlotter({
     try {
       if (action === "confirm") {
         await confirmTrade(tradeId);
-      } else if (action === "cancel") {
-        await cancelTrade(tradeId);
       } else {
-        await amendTrade(tradeId);
+        await cancelTrade(tradeId);
       }
       onRefresh();
     } catch {
@@ -185,75 +185,83 @@ export function TradeBlotter({
             <th>Settlement</th>
             <th>Counterparty</th>
             <th>Status</th>
-            <th>Comment</th>
             <th>Actions</th>
+            <th>Comment</th>
           </tr>
         </thead>
         <tbody>
           {trades.map((trade) => {
             const details = trade.instrument_details ?? {};
             return (
-            <tr key={trade.trade_id}>
-              <td className="blotter__id">{trade.trade_id}</td>
-              <td>{trade.instrument_type}</td>
-              <td>{trade.currency_pair}</td>
-              <td>{trade.direction}</td>
-              <td>{trade.trade_date ?? "—"}</td>
-              <td>
-                {formatRate(details.strike_rate ?? details.rate) ?? "—"}
-              </td>
-              <td>{details.option_type ?? "—"}</td>
-              <td>{details.expiry_date ?? "—"}</td>
-              <td>{details.delivery_date ?? "—"}</td>
-              <td>{details.premium_date ?? "—"}</td>
-              <td>{formatNumber(details.premium) ?? "—"}</td>
-              <td>{details.premium_currency ?? "—"}</td>
-              <td>{details.exercise_style ?? "—"}</td>
-              <td>{trade.currency_1}</td>
-              <td>{formatNumber(trade.notional_1) ?? "—"}</td>
-              <td>{trade.currency_2}</td>
-              <td>{formatNumber(notional2For(trade)) ?? "—"}</td>
-              <td>{details.settlement_date ?? "—"}</td>
-              <td>{trade.counterparty}</td>
-              <td>
-                <StatusBadge status={trade.status} />
-              </td>
-              <td>{trade.comment || "—"}</td>
-              <td className="blotter__actions">
-                {trade.status === "PENDING_CONFIRMATION" && (
-                  <button
-                    className="btn btn--ghost"
-                    disabled={busyId === trade.trade_id}
-                    onClick={() => handleStatus(trade.trade_id, "confirm")}
-                  >
-                    Confirm
-                  </button>
-                )}
-                {(trade.status === "PENDING_CONFIRMATION" ||
-                  trade.status === "BOOKED") && (
-                  <button
-                    className="btn btn--ghost"
-                    disabled={busyId === trade.trade_id}
-                    onClick={() => handleStatus(trade.trade_id, "cancel")}
-                  >
-                    Cancel
-                  </button>
-                )}
-                {trade.status === "BOOKED" && (
-                  <button
-                    className="btn btn--ghost"
-                    disabled={busyId === trade.trade_id}
-                    onClick={() => handleStatus(trade.trade_id, "amend")}
-                  >
-                    Amend
-                  </button>
-                )}
-              </td>
-            </tr>
+              <tr key={trade.trade_id}>
+                <td className="blotter__id">{trade.trade_id}</td>
+                <td>{trade.instrument_type}</td>
+                <td>{trade.currency_pair}</td>
+                <td>{trade.direction}</td>
+                <td>{trade.trade_date ?? "—"}</td>
+                <td>{formatRate(details.strike_rate ?? details.rate) ?? "—"}</td>
+                <td>{details.option_type ?? "—"}</td>
+                <td>{details.expiry_date ?? "—"}</td>
+                <td>{details.delivery_date ?? "—"}</td>
+                <td>{details.premium_date ?? "—"}</td>
+                <td>{formatNumber(details.premium) ?? "—"}</td>
+                <td>{details.premium_currency ?? "—"}</td>
+                <td>{details.exercise_style ?? "—"}</td>
+                <td>{trade.currency_1}</td>
+                <td>{formatNumber(trade.notional_1) ?? "—"}</td>
+                <td>{trade.currency_2}</td>
+                <td>{formatNumber(notional2For(trade)) ?? "—"}</td>
+                <td>{details.settlement_date ?? "—"}</td>
+                <td>{trade.counterparty}</td>
+                <td>
+                  <StatusBadge status={trade.status} />
+                </td>
+                <td className="blotter__actions">
+                  {trade.status === "PENDING_CONFIRMATION" && (
+                    <button
+                      className="btn btn--ghost"
+                      disabled={busyId === trade.trade_id}
+                      onClick={() => handleStatus(trade.trade_id, "confirm")}
+                    >
+                      Confirm
+                    </button>
+                  )}
+                  {(trade.status === "PENDING_CONFIRMATION" ||
+                    trade.status === "BOOKED") && (
+                    <button
+                      className="btn btn--ghost"
+                      disabled={busyId === trade.trade_id}
+                      onClick={() => handleStatus(trade.trade_id, "cancel")}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  {trade.status === "BOOKED" && (
+                    <button
+                      className="btn btn--ghost"
+                      disabled={busyId === trade.trade_id}
+                      onClick={() => setAmending(trade)}
+                    >
+                      Amend
+                    </button>
+                  )}
+                </td>
+                <td>{trade.comment || "—"}</td>
+              </tr>
             );
           })}
         </tbody>
       </table>
+      {amending && (
+        <AmendTradeDialog
+          trade={amending}
+          onClose={() => setAmending(null)}
+          onSaved={() => {
+            setAmending(null);
+            onRefresh();
+          }}
+        />
+      )}
     </div>
   );
 }

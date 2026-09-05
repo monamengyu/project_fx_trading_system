@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { StatusBadge } from "./StatusBadge.jsx";
 import { DateRangePicker } from "./DateRangePicker.jsx";
 import { AmendTradeDialog } from "./AmendTradeDialog.jsx";
+import { useTradeMtmSocket } from "../hooks/useTradeMtmSocket.js";
 import { cancelTrade, confirmTrade } from "../services/trades.js";
 
 const STATUSES = ["PENDING_CONFIRMATION", "BOOKED", "CANCELLED", "MATURED"];
@@ -53,12 +54,23 @@ export function TradeBlotter({
   const [busyId, setBusyId] = useState(null);
   const [amending, setAmending] = useState(null); // trade being amended
   const [draft, setDraft] = useState(filters ?? {});
+  // live MTM overlay from the /ws/positions stream, keyed by trade id
+  const [mtmById, setMtmById] = useState({});
+  const [mtmConnected, setMtmConnected] = useState(false);
 
   // Keep the blotter fresh without user interaction.
   useEffect(() => {
     const id = setInterval(onRefresh, 30000);
     return () => clearInterval(id);
   }, [onRefresh]);
+
+  // Live per-trade MTM values overlay the REST snapshot.
+  useTradeMtmSocket((message) => {
+    if (message?.trade_id && message.mtm_value != null) {
+      setMtmById((prev) => ({ ...prev, [message.trade_id]: message.mtm_value }));
+      setMtmConnected(true);
+    }
+  });
 
   function handleChange(key, value) {
     const next = { ...draft, [key]: value };
@@ -97,6 +109,7 @@ export function TradeBlotter({
     <div className="panel__body">
       <div className="panel__header">
         <h2 className="panel__title">Trade Blotter</h2>
+        {mtmConnected && <span className="badge badge--success">LIVE</span>}
         <button className="btn btn--ghost" onClick={onRefresh} disabled={loading}>
           {loading ? "Refreshing…" : "Refresh"}
         </button>
@@ -185,6 +198,7 @@ export function TradeBlotter({
             <th>Settlement</th>
             <th>Counterparty</th>
             <th>Status</th>
+            <th>MTM (USD)</th>
             <th>Actions</th>
             <th>Comment</th>
           </tr>
@@ -215,6 +229,22 @@ export function TradeBlotter({
                 <td>{trade.counterparty}</td>
                 <td>
                   <StatusBadge status={trade.status} />
+                </td>
+                <td>
+                  {trade.status === "BOOKED" &&
+                  mtmById[trade.trade_id] != null ? (
+                    <span
+                      className={
+                        mtmById[trade.trade_id] < 0
+                          ? "blotter__mtm blotter__mtm--negative"
+                          : "blotter__mtm"
+                      }
+                    >
+                      {formatNumber(mtmById[trade.trade_id])}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td className="blotter__actions">
                   {trade.status === "PENDING_CONFIRMATION" && (

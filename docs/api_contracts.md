@@ -254,11 +254,23 @@ Streams live rate updates to subscribed clients. The backend pushes a message pe
 `as_of` is the Frankfurter reference-rate date (rates update once per ECB business day), matching the REST `GET /market-data/rates` response.
 
 ### `WS /ws/positions`
-Streams live mark-to-market (MTM) position updates.
+Streams live per-trade mark-to-market (MTM) updates together with per-trade
+greeks. Each BOOKED trade is pushed on every cycle; trades that cannot be
+priced (no live rate or an expired/unpricable option) are omitted, so every
+message carries both `mtm_value` and a complete `greeks` object. Greek
+scaling matches `GET /positions` (delta in currency_1 units, gamma/vega per
+1% move, theta per day), so summing messages by `currency_pair` reproduces
+the REST position summary.
 
 **Server → Client message**
 ```json
-{ "trade_id": "uuid", "mtm_value": 1250.50, "as_of": "2026-07-29T10:15:05Z" }
+{
+  "trade_id": "uuid",
+  "currency_pair": "EURUSD",
+  "mtm_value": 1250.50,
+  "greeks": { "delta": 1000000.0, "gamma": 123.45, "vega": -67.89, "theta": 1.23 },
+  "as_of": "2026-07-29T10:15:05Z"
+}
 ```
 
 ## Natural language trade entry

@@ -112,4 +112,34 @@ describe("NlTradeEntry", () => {
     expect(bookTrade.mock.calls[0][0].comment).toBe("Sell 500k EURUSD forward at 1.09");
     expect(onBooked).toHaveBeenCalledTimes(1);
   });
+
+  it("shows elapsed time but hides tokens for a baseline (no usage)", async () => {
+    parseTrade.mockResolvedValue(PARSED);
+    const user = userEvent.setup();
+    render(<NlTradeEntry onBooked={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Instruction"), {
+      target: { value: "Buy 1 million euros against dollars, spot at 1.085" },
+    });
+    await user.click(screen.getByRole("button", { name: "Parse & Review" }));
+    await waitFor(() => screen.getByRole("heading", { name: "Review Parsed Trade" }));
+
+    expect(screen.getByText(/⏱/)).toBeInTheDocument();
+    expect(screen.queryByText(/tokens:/)).not.toBeInTheDocument();
+  });
+
+  it("shows total token usage when the response includes usage", async () => {
+    parseTrade.mockResolvedValue({ ...PARSED, usage: { total_tokens: 12345 } });
+    const user = userEvent.setup();
+    render(<NlTradeEntry onBooked={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Instruction"), {
+      target: { value: "Buy 1 million euros against dollars, spot at 1.085" },
+    });
+    await user.click(screen.getByRole("button", { name: "Parse & Review" }));
+    await waitFor(() => screen.getByRole("heading", { name: "Review Parsed Trade" }));
+
+    expect(screen.getByText("tokens: 12,345")).toBeInTheDocument();
+    expect(screen.getByText(/⏱/)).toBeInTheDocument();
+  });
 });

@@ -153,3 +153,51 @@ async def test_resolver_rejects_bad_settlement_window():
     )
     with pytest.raises(ParseError):
         await draft_to_trade_create(draft)
+
+
+_VALID_SPOT_CONTENT = {
+    "instrument_type": "SPOT",
+    "currency_pair": "EURUSD",
+    "direction": "BUY",
+    "notional_1": 1_000_000,
+    "counterparty": "BANK_A",
+    "comment": None,
+    "instrument": {"instrument_type": "SPOT", "rate": 1.085},
+}
+
+
+async def test_parse_trade_propagates_usage_from_model():
+    from app.services.nl_parse.clients import Completion
+    from app.services.nl_parse.parser import parse_trade
+
+    class FakeClient:
+        async def complete_json(self, system, user):
+            return Completion(
+                content=_VALID_SPOT_CONTENT,
+                usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            )
+
+    with patch("app.services.nl_parse.parser.get_client", return_value=FakeClient()):
+        result = await parse_trade("Buy EURUSD spot", model_id="llama3.2:3b")
+    assert result.usage == {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+
+
+async def test_parse_trade_accumulates_usage_across_retry():
+    from app.services.nl_parse.clients import Completion
+    from app.services.nl_parse.parser import parse_trade
+
+    calls = {"n": 0}
+
+    class FakeClient:
+        async def complete_json(self, system, user):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                # Invalid content triggers the retry; it still consumed tokens.
+                return Completion(content={"bogus": True}, usage={"total_tokens": 15})
+            return Completion(content=_VALID_SPOT_CONTENT, usage={"total_tokens": 12})
+
+    with patch("app.services.nl_parse.parser.get_client", return_value=FakeClient()):
+        result = await parse_trade("Buy EURUSD spot", model_id="llama3.2:3b")
+    assert calls["n"] == 2
+    assert result.usage == {"total_tokens": 27}
+    assert result.model == "llama3.2:3b"

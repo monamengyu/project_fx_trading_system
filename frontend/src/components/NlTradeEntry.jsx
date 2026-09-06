@@ -17,6 +17,25 @@ function formatNumber(value) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value);
 }
 
+function formatElapsed(ms) {
+  if (ms == null) return null;
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  return `${(ms / 1000).toFixed(1)} s`;
+}
+
+function ReviewStats({ elapsedMs, totalTokens }) {
+  return (
+    <div className="nl-entry__meta">
+      {elapsedMs != null && (
+        <span className="badge badge--muted">⏱ {formatElapsed(elapsedMs)}</span>
+      )}
+      {totalTokens != null && (
+        <span className="badge badge--muted">tokens: {formatNumber(totalTokens)}</span>
+      )}
+    </div>
+  );
+}
+
 function ReviewRow({ label, value }) {
   return (
     <li>
@@ -30,7 +49,7 @@ export function NlTradeEntry({ onBooked }) {
   const [models, setModels] = useState([]);
   const [text, setText] = useState("");
   const [model, setModel] = useState("rule-based");
-  const { result, loading, error, parse, clear } = useNlParse();
+  const { result, loading, error, elapsedMs, parse, clear } = useNlParse();
   const { submit, submitting, result: bookResult, error: bookError } = useBookTrade();
 
   useEffect(() => {
@@ -68,6 +87,10 @@ export function NlTradeEntry({ onBooked }) {
           <h2 className="panel__title">Review Parsed Trade</h2>
           <span className="badge badge--info">model: {result.model}</span>
         </div>
+        <ReviewStats
+          elapsedMs={elapsedMs}
+          totalTokens={result.usage?.total_tokens ?? null}
+        />
         <ul className="review">
           <ReviewRow label="Type" value={t.instrument_type} />
           <ReviewRow label="Pair" value={t.currency_pair} />

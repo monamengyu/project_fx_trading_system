@@ -31,6 +31,7 @@ async def test_parse_spot_text(client):
     assert response.status_code == 200
     body = response.json()
     assert body["model"] == "rule-based"
+    assert body["usage"] is None  # rule-based baseline consumes no tokens
     trade = body["trade"]
     assert trade["instrument_type"] == "SPOT"
     assert trade["currency_pair"] == "EURUSD"

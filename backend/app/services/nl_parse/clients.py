@@ -1,6 +1,8 @@
 """Provider adapters for NL trade parsing.
 
-Every client exposes ``async complete_json(system, user) -> dict``. Hosted LLM
+Every client exposes ``async complete_json(system, user) -> Completion`` where
+``Completion.content`` is the parsed JSON and ``Completion.usage`` carries the
+provider's token usage (``None`` for the rule-based baseline). Hosted LLM
 models go through a single OpenRouter gateway (OpenAI-compatible
 ``/chat/completions`` protocol); Ollama shares that protocol locally. The
 baseline client wraps the deterministic rule-based parser.
@@ -8,11 +10,25 @@ baseline client wraps the deterministic rule-based parser.
 
 import asyncio
 import json
+from dataclasses import dataclass
 
 import httpx
 
 from app.core.config import settings
 from app.services.nl_parse.models import ModelInfo
+
+
+@dataclass
+class Completion:
+    """A provider completion: parsed JSON content plus token usage.
+
+    ``usage`` mirrors the provider's ``usage`` object (e.g. ``prompt_tokens``,
+    ``completion_tokens``, ``total_tokens``) and is ``None`` when the provider
+    does not report tokens (the rule-based baseline).
+    """
+
+    content: dict
+    usage: dict | None = None
 
 
 def _provider_error(exc: httpx.HTTPStatusError) -> str:
@@ -42,10 +58,10 @@ class BaselineClient:
 
     kind = "baseline"
 
-    async def complete_json(self, system: str, user: str) -> dict:
+    async def complete_json(self, system: str, user: str) -> Completion:
         from app.services.nl_parse.baseline import parse_rule_based
 
-        return parse_rule_based(user)
+        return Completion(content=parse_rule_based(user))
 
 
 class OpenAICompatClient:
@@ -58,7 +74,7 @@ class OpenAICompatClient:
         self.api_key = api_key
         self.model = model
 
-    async def complete_json(self, system: str, user: str) -> dict:
+    async def complete_json(self, system: str, user: str) -> Completion:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -83,8 +99,9 @@ class OpenAICompatClient:
                         headers=headers,
                     )
                     response.raise_for_status()
-                content = response.json()["choices"][0]["message"]["content"]
-                return json.loads(content)
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
+                return Completion(content=json.loads(content), usage=data.get("usage"))
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 503 and attempt < 2:
                     last_exc = exc
@@ -110,7 +127,7 @@ class OpenRouterClient:
         self.api_key = api_key
         self.model = model
 
-    async def complete_json(self, system: str, user: str) -> dict:
+    async def complete_json(self, system: str, user: str) -> Completion:
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
@@ -140,8 +157,11 @@ class OpenRouterClient:
             raise RuntimeError(
                 f"cannot reach OpenRouter at {settings.openrouter_base_url}: {exc}"
             ) from exc
-        content = response.json()["choices"][0]["message"]["content"]
-        return json.loads(_strip_code_fences(content))
+        data = response.json()
+        content = data["choices"][0]["message"]["content"]
+        return Completion(
+            content=json.loads(_strip_code_fences(content)), usage=data.get("usage")
+        )
 
 
 def get_client(info: ModelInfo):

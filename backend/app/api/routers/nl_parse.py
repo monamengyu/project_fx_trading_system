@@ -21,6 +21,7 @@ class NLParseResponse(BaseModel):
     draft: dict[str, Any]
     trade: dict[str, Any]
     raw: dict[str, Any] | None = None
+    usage: dict[str, Any] | None = None
 
 
 @router.get("/models")
@@ -47,4 +48,5 @@ async def parse_natural_language(req: NLParseRequest) -> NLParseResponse:
         draft=result.draft.model_dump(mode="json"),
         trade=result.trade.model_dump(mode="json"),
         raw=result.raw,
+        usage=result.usage,
     )

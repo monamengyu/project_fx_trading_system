@@ -25,6 +25,7 @@ class ParseResult:
     trade: TradeCreate
     model: str
     raw: dict | None
+    usage: dict | None = None
 
 
 async def draft_to_trade_create(draft: NLTradeDraft) -> TradeCreate:
@@ -100,13 +101,21 @@ async def parse_trade(text: str, model_id: str | None = None) -> ParseResult:
     system = messages[0]["content"]
     user = text
     last_error: Exception | None = None
+    usage: dict | None = None
 
     for attempt in range(2):
         try:
-            raw = await client.complete_json(system, user)
-            draft = NLTradeDraft.model_validate(raw)
+            completion = await client.complete_json(system, user)
+            usage = _accumulate_usage(usage, completion.usage)
+            draft = NLTradeDraft.model_validate(completion.content)
             trade = await draft_to_trade_create(draft)
-            return ParseResult(draft=draft, trade=trade, model=info.id, raw=raw)
+            return ParseResult(
+                draft=draft,
+                trade=trade,
+                model=info.id,
+                raw=completion.content,
+                usage=usage,
+            )
         except (ValidationError, json.JSONDecodeError, ValueError) as exc:
             last_error = exc
             if attempt == 0 and info.kind != "baseline":
@@ -118,3 +127,22 @@ async def parse_trade(text: str, model_id: str | None = None) -> ParseResult:
             break
 
     raise ParseError(f"model {model_id} could not parse input: {last_error}")
+
+
+def _accumulate_usage(total: dict | None, current: dict | None) -> dict | None:
+    """Merge a provider usage object into an accumulating total (token counts).
+
+    LLM calls that fail validation and are retried still consume tokens, so
+    usage is summed across all attempts rather than only reporting the last.
+    """
+    if not current:
+        return total
+    if total is None:
+        return dict(current)
+    merged = dict(total)
+    for key, value in current.items():
+        if isinstance(value, (int, float)):
+            merged[key] = merged.get(key, 0) + value
+        elif key not in merged:
+            merged[key] = value
+    return merged

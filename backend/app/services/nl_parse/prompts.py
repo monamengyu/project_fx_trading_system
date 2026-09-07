@@ -3,10 +3,11 @@
 from datetime import date
 
 from app.services.business_calendar import effective_trade_date, spot_value_date
+from app.services.market_data.pairs import SUPPORTED_PAIRS
 
 SYSTEM_PROMPT = """You are an FX trade desk assistant. Convert a trader's natural-language instruction into a single structured JSON trade. Respond with ONLY valid JSON — no prose, no markdown, no code fences.
 
-Supported currency pairs: EURUSD, GBPUSD, USDJPY.
+Supported currency pairs: {pairs}.
 Direction: BUY (buy the first currency, sell the second) or SELL (the opposite).
 Counterparty must be one of: BANK_A, BANK_B, BANK_C. Default to BANK_A when unspecified.
 
@@ -20,7 +21,7 @@ Today is {today}. The spot value date (today + 2 business days) is {spot}.
 JSON schema — output exactly this shape, all keys present; use null for fields that do not apply:
 {{
   "instrument_type": "SPOT" | "FORWARD" | "OPTION",
-  "currency_pair": "EURUSD" | "GBPUSD" | "USDJPY",
+  "currency_pair": {pair_union},
   "direction": "BUY" | "SELL",
   "notional_1": <number>,
   "counterparty": "BANK_A" | "BANK_B" | "BANK_C",
@@ -127,7 +128,12 @@ FEW_SHOT_EXAMPLES: list[tuple[str, dict]] = [
 def build_system_prompt(today: date | None = None) -> str:
     today = today or effective_trade_date(date.today())
     spot = spot_value_date(today)
-    return SYSTEM_PROMPT.format(today=today.isoformat(), spot=spot.isoformat())
+    return SYSTEM_PROMPT.format(
+        today=today.isoformat(),
+        spot=spot.isoformat(),
+        pairs=", ".join(SUPPORTED_PAIRS),
+        pair_union=" | ".join(f'"{pair}"' for pair in SUPPORTED_PAIRS),
+    )
 
 
 def build_messages(user_text: str) -> list[dict]:

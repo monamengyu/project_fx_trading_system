@@ -13,33 +13,60 @@ from app.services.business_calendar import (
     effective_trade_date,
     spot_value_date,
 )
+from app.services.market_data.pairs import SUPPORTED_PAIRS
 
-_PAIR_PATTERNS = [
-    (
-        re.compile(
-            r"\beurusd\b|\beur/usd\b|"
-            r"\b(euros?|eur)\s+(?:again(?:st)?|vs\.?|to|for)\s+(usd|dollars?)\b|"
-            r"\b(usd|dollars?)\s+(?:again(?:st)?|vs\.?|to|for)\s+(euros?|eur)\b"
-        ),
-        "EURUSD",
-    ),
-    (
-        re.compile(
-            r"\bgbpusd\b|\bgbp/usd\b|"
-            r"\b(pounds?|gbp)\s+(?:again(?:st)?|vs\.?|to|for)\s+(usd|dollars?)\b|"
-            r"\b(usd|dollars?)\s+(?:again(?:st)?|vs\.?|to|for)\s+(pounds?|gbp)\b"
-        ),
-        "GBPUSD",
-    ),
-    (
-        re.compile(
-            r"\busdjpy\b|\busd/jpy\b|"
-            r"\b(usd|dollars?)\s+(?:again(?:st)?|vs\.?|to|for)\s+(jpy|yen)\b|"
-            r"\b(jpy|yen)\s+(?:again(?:st)?|vs\.?|to|for)\s+(usd|dollars?)\b"
-        ),
-        "USDJPY",
-    ),
-]
+# Spoken/alternative names per currency code, used to recognise pairs in free
+# text ("euros against dollars", "sell gbp for usd", "kiwi vs usd", ...).
+# Longer alternatives are listed first so alternation prefers the specific
+# reading (e.g. "swiss francs" before "francs").
+_CURRENCY_WORDS: dict[str, list[str]] = {
+    "EUR": [r"euros?", r"eur"],
+    "GBP": [r"pounds?", r"sterling", r"gbp"],
+    "USD": [r"dollars?", r"bucks?", r"usd"],
+    "JPY": [r"yen", r"jpy"],
+    "CHF": [r"swiss francs?", r"francs?", r"chf"],
+    "CAD": [r"canadian dollars?", r"loonies?", r"cad"],
+    "AUD": [r"aussie dollars?", r"aussies?", r"australian dollars?", r"aud"],
+    "NZD": [r"k(i)?wis?", r"new zealand dollars?", r"nzd"],
+    "CNH": [r"yuan", r"renminbi", r"cnh"],
+    "HKD": [r"hong kong dollars?", r"hkd"],
+    "SGD": [r"singapore dollars?", r"sing dollars?", r"sgd"],
+    "SEK": [r"swedish krona", r"kronas?", r"kronor", r"sek"],
+    "NOK": [r"norwegian kroner", r"kroner", r"nok"],
+    "MXN": [r"mexican pesos?", r"pesos?", r"mxn"],
+    "ZAR": [r"south african rand", r"rand", r"zar"],
+    "TRY": [r"turkish lira", r"lira", r"try"],
+}
+
+_CONNECTOR = r"(?:again(?:st)?|vs\.?|to|for)"
+
+_PAIR_PATTERNS = []
+
+
+def _word_group(code: str) -> str:
+    """Alternation group matching any name for ``code`` (e.g. usd/dollars)."""
+    return "(?:" + "|".join(_CURRENCY_WORDS[code]) + ")"
+
+
+def _build_pair_patterns() -> list[tuple[re.Pattern, str]]:
+    """Compile one matcher per supported pair, mirroring the code and spoken forms."""
+    patterns: list[tuple[re.Pattern, str]] = []
+    for pair in SUPPORTED_PAIRS:
+        base, quote = pair[:3], pair[3:]
+        base_group, quote_group = _word_group(base), _word_group(quote)
+        code_form = (
+            rf"\b{pair.lower()}\b|\b{base.lower()}/{quote.lower()}\b|"
+            rf"\b{base.lower()}\s*/\s*{quote.lower()}\b"
+        )
+        spoken = (
+            rf"\b{base_group}\s+{_CONNECTOR}\s+{quote_group}\b|"
+            rf"\b{quote_group}\s+{_CONNECTOR}\s+{base_group}\b"
+        )
+        patterns.append((re.compile(rf"{code_form}|{spoken}"), pair))
+    return patterns
+
+
+_PAIR_PATTERNS = _build_pair_patterns()
 
 _COUNTERPARTY = re.compile(r"\b(BANK_[ABC])\b")
 _DATE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")

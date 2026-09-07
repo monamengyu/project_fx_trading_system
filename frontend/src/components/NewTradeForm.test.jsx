@@ -35,6 +35,9 @@ vi.mock("../hooks/useMarketRates.js", () => ({
     refresh: vi.fn(),
   }),
 }));
+vi.mock("../hooks/useSupportedPairs.js", () => ({
+  useSupportedPairs: () => ["EURUSD", "GBPUSD", "USDJPY"],
+}));
 
 const FORWARD_SETTLEMENT = toISODate(addBusinessDays(new Date(), 10));
 

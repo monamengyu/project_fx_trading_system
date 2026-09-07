@@ -15,6 +15,9 @@ vi.mock("./hooks/useTrades.js", () => ({
 vi.mock("./hooks/useMarketRates.js", () => ({
   useMarketRates: () => ({ rates: {}, loading: false, error: null, refresh: vi.fn() }),
 }));
+vi.mock("./hooks/useSupportedPairs.js", () => ({
+  useSupportedPairs: () => ["EURUSD", "GBPUSD", "USDJPY"],
+}));
 vi.mock("./services/nlParse.js", () => ({
   fetchParseModels: vi.fn().mockResolvedValue([]),
   parseTrade: vi.fn(),

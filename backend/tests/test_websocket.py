@@ -9,6 +9,7 @@ from app.api.routers.ws import ConnectionManager
 from app.main import app
 from app.models.enums import Currency, CurrencyPair, Direction, InstrumentType, TradeStatus
 from app.models.trade import Trade
+from app.services.market_data.pairs import SUPPORTED_PAIRS
 
 
 class FakeWebSocket:
@@ -53,7 +54,7 @@ def test_market_data_ws_receives_rate_message():
     ):
         message = websocket.receive_json()
 
-    assert message["pair"] in ("EURUSD", "GBPUSD", "USDJPY")
+    assert message["pair"] in SUPPORTED_PAIRS
     assert message["rate"] == 1.1567
     assert message["as_of"] == "2026-08-14"
 

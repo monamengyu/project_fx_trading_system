@@ -72,6 +72,41 @@ def test_baseline_parses_spot():
     assert result["instrument"]["rate"] == 1.085
 
 
+@pytest.mark.parametrize(
+    "text, pair, direction, notional",
+    [
+        # USDJPY
+        ("Sell 5 million yen for usd spot at 152.5", "USDJPY", "SELL", 5_000_000),
+        ("Buy 3 million usd/jpy spot at 152.5", "USDJPY", "BUY", 3_000_000),
+        # USDCHF / USDCAD
+        ("Buy 4 million swiss francs for usd spot at 0.89", "USDCHF", "BUY", 4_000_000),
+        ("Sell 4 million usd against canadian dollars spot at 1.36", "USDCAD", "SELL", 4_000_000),
+        # AUDUSD / NZDUSD
+        ("Buy 5 million aussie dollars for usd spot at 0.66", "AUDUSD", "BUY", 5_000_000),
+        ("Sell 8 million kiwi for usd spot at 0.61", "NZDUSD", "SELL", 8_000_000),
+        ("Buy 5 million usd against new zealand dollars spot at 0.61", "NZDUSD", "BUY", 5_000_000),
+        # USDCNH / USDHKD
+        ("Buy 5 million usd against yuan spot at 7.2", "USDCNH", "BUY", 5_000_000),
+        ("Sell 2 million usd against hong kong dollars spot at 7.8", "USDHKD", "SELL", 2_000_000),
+        # USDSGD / USDSEK / USDNOK
+        ("Sell usdsgd 1 m spot at 1.35", "USDSGD", "SELL", 1_000_000),
+        ("Buy 3 million singapore dollars for usd spot at 1.30", "USDSGD", "BUY", 3_000_000),
+        ("Sell 5 million usd against swedish krona spot at 10.5", "USDSEK", "SELL", 5_000_000),
+        ("Buy 5 million norwegian kroner for usd spot at 10.2", "USDNOK", "BUY", 5_000_000),
+        # USDMXN / USDZAR / USDTRY
+        ("Sell 6 million usd against mexican pesos spot at 18.9", "USDMXN", "SELL", 6_000_000),
+        ("Buy 10 million usd against south african rand spot at 18.5", "USDZAR", "BUY", 10_000_000),
+        ("Sell 3 million usd against turkish lira spot at 34.2", "USDTRY", "SELL", 3_000_000),
+    ],
+)
+def test_baseline_parses_expanded_pairs(text, pair, direction, notional):
+    result = parse_rule_based(text)
+    assert result["instrument_type"] == "SPOT"
+    assert result["currency_pair"] == pair
+    assert result["direction"] == direction
+    assert result["notional_1"] == notional
+
+
 def test_baseline_parses_forward_with_explicit_date():
     result = parse_rule_based("Sell 500k GBP for USD settling 2026-11-30 at 1.27")
     assert result["instrument_type"] == "FORWARD"

@@ -8,6 +8,10 @@ vi.mock("../services/trades.js", () => ({
   amendTrade: vi.fn(),
 }));
 
+vi.mock("../hooks/useSupportedPairs.js", () => ({
+  useSupportedPairs: () => ["EURUSD", "GBPUSD", "USDJPY"],
+}));
+
 vi.mock("./DateRangePicker.jsx", () => ({
   DateRangePicker: ({ label, onChange }) => (
     <button

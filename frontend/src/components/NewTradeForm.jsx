@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useBookTrade } from "../hooks/useBookTrade.js";
 import { useMarketRates } from "../hooks/useMarketRates.js";
+import { useSupportedPairs } from "../hooks/useSupportedPairs.js";
 import { quoteOption } from "../services/pricing.js";
 import {
   addBusinessDays,
@@ -10,7 +11,6 @@ import {
   todayISO,
 } from "../utils/date.js";
 
-const PAIRS = ["EURUSD", "GBPUSD", "USDJPY"];
 const DIRECTIONS = ["BUY", "SELL"];
 const COUNTERPARTIES = ["BANK_A", "BANK_B", "BANK_C"];
 const INSTRUMENT_TYPES = ["SPOT", "FORWARD", "OPTION"];
@@ -189,6 +189,7 @@ function suggestedType(form) {
 }
 
 export function NewTradeForm({ onBooked }) {
+  const PAIRS = useSupportedPairs();
   const [form, setForm] = useState(EMPTY_FORM);
   const [review, setReview] = useState(null); // payload awaiting confirmation
   const [formError, setFormError] = useState(null);

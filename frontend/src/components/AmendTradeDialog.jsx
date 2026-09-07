@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
+import { useSupportedPairs } from "../hooks/useSupportedPairs.js";
 import { amendTrade } from "../services/trades.js";
 import { isBusinessDay } from "../utils/date.js";
 
-const PAIRS = ["EURUSD", "GBPUSD", "USDJPY"];
 const DIRECTIONS = ["BUY", "SELL"];
 const COUNTERPARTIES = ["BANK_A", "BANK_B", "BANK_C"];
 const OPTION_TYPES = ["CALL", "PUT"];
@@ -178,6 +178,7 @@ function Field({ label, children }) {
 }
 
 export function AmendTradeDialog({ trade, onClose, onSaved }) {
+  const PAIRS = useSupportedPairs();
   const [form, setForm] = useState(() => initialForm(trade));
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);

@@ -3,10 +3,10 @@ import { StatusBadge } from "./StatusBadge.jsx";
 import { DateRangePicker } from "./DateRangePicker.jsx";
 import { AmendTradeDialog } from "./AmendTradeDialog.jsx";
 import { useTradeMtmSocket } from "../hooks/useTradeMtmSocket.js";
+import { useSupportedPairs } from "../hooks/useSupportedPairs.js";
 import { cancelTrade, confirmTrade } from "../services/trades.js";
 
 const STATUSES = ["PENDING_CONFIRMATION", "BOOKED", "CANCELLED", "MATURED"];
-const PAIRS = ["EURUSD", "GBPUSD", "USDJPY"];
 const TYPES = ["SPOT", "FORWARD", "OPTION"];
 
 function clean(obj) {
@@ -51,6 +51,7 @@ export function TradeBlotter({
   filters,
   setFilters,
 }) {
+  const PAIRS = useSupportedPairs();
   const [busyId, setBusyId] = useState(null);
   const [amending, setAmending] = useState(null); // trade being amended
   const [draft, setDraft] = useState(filters ?? {});

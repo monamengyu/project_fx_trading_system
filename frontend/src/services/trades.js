@@ -29,6 +29,6 @@ export async function cancelTrade(tradeId, comment) {
   return api.post(`/trades/${tradeId}/cancel`, { comment });
 }
 
-export async function amendTrade(tradeId, comment) {
-  return api.post(`/trades/${tradeId}/amend`, { comment });
+export async function amendTrade(tradeId, payload) {
+  return api.post(`/trades/${tradeId}/amend`, payload);
 }

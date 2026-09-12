@@ -11,7 +11,7 @@ from app.models.enums import TradeState, TradeStatus
 from app.models.trade import Trade
 from app.models.trade_state import TradeStateLog
 from app.services import trade_lifecycle
-from app.services.business_calendar import spot_value_date
+from app.services.business_calendar import add_business_days, spot_value_date
 
 
 @pytest.fixture
@@ -180,6 +180,7 @@ async def test_amend_booked_trade(client):
     body = response.json()
     assert body["status"] == "BOOKED"  # status stays BOOKED after an amend
     assert body["notional_1"] == 2000000
+    assert body["notional_2"] == 2170000.0  # recomputed as notional_1 x rate
     assert body["comment"] == "increased size"
 
     history = await client.get(f"/trades/{trade_id}/history")
@@ -210,6 +211,122 @@ async def test_amend_404_for_unknown_trade(client):
         "/trades/00000000-0000-0000-0000-000000000000/amend", json={"comment": "x"}
     )
     assert response.status_code == 404
+
+
+async def test_amend_currency_pair_derives_currencies(client):
+    created = await _book_trade(client)
+    assert created.status_code == 201
+    trade_id = uuid.UUID(created.json()["trade_id"])
+    await _confirm_trade(trade_id)
+
+    response = await client.post(
+        f"/trades/{trade_id}/amend",
+        json={"currency_pair": "GBPUSD"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["currency_pair"] == "GBPUSD"
+    assert body["currency_1"] == "GBP"
+    assert body["currency_2"] == "USD"
+
+
+async def test_amend_direction_and_counterparty(client):
+    created = await _book_trade(client)
+    assert created.status_code == 201
+    trade_id = uuid.UUID(created.json()["trade_id"])
+    await _confirm_trade(trade_id)
+
+    response = await client.post(
+        f"/trades/{trade_id}/amend",
+        json={"direction": "SELL", "counterparty": "BANK_C"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["direction"] == "SELL"
+    assert body["counterparty"] == "BANK_C"
+
+
+async def test_amend_rate_and_settlement_updates_details(client):
+    created = await _book_trade(client)
+    assert created.status_code == 201
+    trade_id = uuid.UUID(created.json()["trade_id"])
+    trade_date = date.fromisoformat(created.json()["trade_date"])
+    await _confirm_trade(trade_id)
+
+    settlement = add_business_days(trade_date, 2).isoformat()
+    response = await client.post(
+        f"/trades/{trade_id}/amend",
+        json={
+            "instrument_details": {
+                "instrument_type": "SPOT",
+                "rate": 1.12,
+                "settlement_date": settlement,
+            }
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["instrument_details"]["rate"] == 1.12
+    assert body["instrument_details"]["settlement_date"] == settlement
+    assert body["notional_2"] == 1120000.0  # recomputed from the new rate
+
+
+async def test_amend_rejects_out_of_window_spot_settlement(client):
+    created = await _book_trade(client)
+    assert created.status_code == 201
+    trade_id = uuid.UUID(created.json()["trade_id"])
+    trade_date = date.fromisoformat(created.json()["trade_date"])
+    await _confirm_trade(trade_id)
+
+    # SPOT settling 3 business days out is beyond the 2-day spot window
+    beyond_spot = add_business_days(trade_date, 3).isoformat()
+    response = await client.post(
+        f"/trades/{trade_id}/amend",
+        json={
+            "instrument_details": {
+                "instrument_type": "SPOT",
+                "rate": 1.085,
+                "settlement_date": beyond_spot,
+            }
+        },
+    )
+    assert response.status_code == 422
+
+
+async def test_amend_rejects_instrument_type_mismatch(client):
+    forward_payload = {
+        "instrument_type": "FORWARD",
+        "currency_pair": "EURUSD",
+        "direction": "BUY",
+        "currency_1": "EUR",
+        "notional_1": 1000000,
+        "currency_2": "USD",
+        "notional_2": 1092000,
+        "counterparty": "BANK_A",
+        "instrument_details": {
+            "instrument_type": "FORWARD",
+            "rate": 1.092,
+            "settlement_date": add_business_days(date.today(), 20).isoformat(),
+        },
+    }
+    created = await client.post("/trades", json=forward_payload)
+    assert created.status_code == 201
+    trade_id = uuid.UUID(created.json()["trade_id"])
+    client.created_trade_ids.append(str(trade_id))
+    await _confirm_trade(trade_id)
+
+    # instrument_type is structural: a FORWARD trade cannot be amended with SPOT details
+    response = await client.post(
+        f"/trades/{trade_id}/amend",
+        json={
+            "instrument_details": {
+                "instrument_type": "SPOT",
+                "rate": 1.085,
+                "settlement_date": spot_value_date(date.today()).isoformat(),
+            }
+        },
+    )
+    assert response.status_code == 422
 
 
 

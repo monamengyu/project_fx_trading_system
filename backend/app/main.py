@@ -7,17 +7,20 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.router import api_router
-from app.api.routers.ws import stream_rates
+from app.api.routers.ws import stream_positions_mtm, stream_rates
 from app.core.config import settings
 from app.db.session import get_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # background task that pushes live market rates to WebSocket subscribers
+    # background tasks that push live market rates and MTM updates to
+    # WebSocket subscribers
     stream_task = asyncio.create_task(stream_rates())
+    positions_task = asyncio.create_task(stream_positions_mtm())
     yield
     stream_task.cancel()
+    positions_task.cancel()
 
 
 # create the backend application, with the API represented by the object app

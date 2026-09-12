@@ -12,13 +12,17 @@ describe("usePositions", () => {
   });
 
   it("loads positions on mount", async () => {
-    fetchPositions.mockResolvedValue([{ currency_pair: "EURUSD", count: 2 }]);
+    fetchPositions.mockResolvedValue([
+      { currency_pair: "EURUSD", delta: 600000, mtm_value: 39000 },
+    ]);
 
     const { result } = renderHook(() => usePositions());
 
     expect(result.current.loading).toBe(true);
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.positions).toEqual([{ currency_pair: "EURUSD", count: 2 }]);
+    expect(result.current.positions).toEqual([
+      { currency_pair: "EURUSD", delta: 600000, mtm_value: 39000 },
+    ]);
     expect(result.current.error).toBeNull();
   });
 

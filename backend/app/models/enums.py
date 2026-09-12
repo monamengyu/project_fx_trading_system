@@ -8,9 +8,23 @@ class InstrumentType(str, enum.Enum):
 
 
 class CurrencyPair(str, enum.Enum):
+    # Majors
     EURUSD = "EURUSD"
     GBPUSD = "GBPUSD"
     USDJPY = "USDJPY"
+    USDCHF = "USDCHF"
+    USDCAD = "USDCAD"
+    AUDUSD = "AUDUSD"
+    NZDUSD = "NZDUSD"
+    # Other USD pairs
+    USDCNH = "USDCNH"
+    USDHKD = "USDHKD"
+    USDSGD = "USDSGD"
+    USDSEK = "USDSEK"
+    USDNOK = "USDNOK"
+    USDMXN = "USDMXN"
+    USDZAR = "USDZAR"
+    USDTRY = "USDTRY"
 
 
 class Direction(str, enum.Enum):
@@ -23,6 +37,18 @@ class Currency(str, enum.Enum):
     USD = "USD"
     GBP = "GBP"
     JPY = "JPY"
+    CHF = "CHF"
+    CAD = "CAD"
+    AUD = "AUD"
+    NZD = "NZD"
+    CNH = "CNH"
+    HKD = "HKD"
+    SGD = "SGD"
+    SEK = "SEK"
+    NOK = "NOK"
+    MXN = "MXN"
+    ZAR = "ZAR"
+    TRY = "TRY"
 
 
 class TradeStatus(str, enum.Enum):

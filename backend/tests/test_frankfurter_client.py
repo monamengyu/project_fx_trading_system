@@ -69,6 +69,45 @@ async def test_fetch_rate_success():
     ]
 
 
+async def test_fetch_rate_usdcnh_queries_cny_symbol():
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"rates": {"CNY": 7.2}, "date": "2026-08-01"}
+
+    class FakeClient:
+        def __init__(self, response):
+            self.response = response
+            self.calls = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, url, params):
+            self.calls.append((url, params))
+            return self.response
+
+    fake_client = FakeClient(FakeResponse())
+    with patch.object(
+        frankfurter_client.httpx, "AsyncClient", return_value=fake_client
+    ):
+        rate, as_of = await frankfurter_client.fetch_rate(CurrencyPair.USDCNH)
+    assert (rate, as_of) == (7.2, date(2026, 8, 1))
+    assert fake_client.calls == [
+        (
+            "https://api.frankfurter.dev/v1/latest",
+            {"base": "USD", "symbols": "CNY"},
+        )
+    ]
+
+
 async def test_fetch_rate_http_error_raises_runtime_error():
     class FakeResponse:
         status_code = 500

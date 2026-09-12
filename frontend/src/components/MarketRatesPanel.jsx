@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useMarketRates } from "../hooks/useMarketRates.js";
 import { useMarketRatesSocket } from "../hooks/useMarketRatesSocket.js";
-import { SUPPORTED_PAIRS } from "../services/marketData.js";
+import { useSupportedPairs } from "../hooks/useSupportedPairs.js";
 
 export function MarketRatesPanel() {
-  const { rates, loading, error } = useMarketRates();
+  const pairs = useSupportedPairs();
+  const { rates, loading, error } = useMarketRates(pairs);
   const [liveRates, setLiveRates] = useState({});
   const [liveConnected, setLiveConnected] = useState(false);
 
@@ -27,7 +28,7 @@ export function MarketRatesPanel() {
         <p className="panel__hint">Loading rates…</p>
       )}
       <ul className="rates">
-        {SUPPORTED_PAIRS.map((pair) => {
+        {pairs.map((pair) => {
           const entry = displayRates[pair];
           return (
             <li key={pair} className="rate">

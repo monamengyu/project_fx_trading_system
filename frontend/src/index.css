@@ -95,7 +95,9 @@ body {
   vertical-align: middle;
 }
 
-/* --- Three-panel layout -------------------------------------------------- */
+/* --- Trading dashboard layout -------------------------------------------- */
+/* Left column : market data | positions on top, trade blotter filling the rest.
+   Right rail  : new-trade form above natural-language entry (same width).   */
 
 .app {
   height: 100vh;
@@ -107,22 +109,50 @@ body {
   flex: 1;
   min-height: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 16px;
   padding: 16px;
 }
 
-.layout__top {
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 340px;
+.layout__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   gap: 16px;
+}
+
+.layout__top {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px;
+}
+
+.layout__blotter {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.layout__blotter > .panel {
+  flex: 1 1 auto;
   min-height: 0;
 }
 
-.layout__bottom {
-  flex: 1;
+.layout__rail {
+  flex: 0 0 360px;
+  min-width: 0;
   min-height: 0;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.layout__rail > .panel {
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .panel {
@@ -178,10 +208,15 @@ body {
 .rates {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 6px 0 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* The 15-pair universe is taller than the compact top panel: keep the box
+     small and let the user scroll to see the pairs that don't fit. */
+  max-height: clamp(220px, 32vh, 300px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .rate {
@@ -242,6 +277,15 @@ body {
 
 .blotter tbody tr:hover {
   background: rgba(45, 212, 191, 0.04);
+}
+
+.blotter__mtm {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.blotter__mtm--negative {
+  color: var(--danger);
 }
 
 .badge {
@@ -367,15 +411,105 @@ body {
   color: var(--danger);
 }
 
+/* --- Amend trade dialog --------------------------------------------------- */
+
+.modal__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 8, 15, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 50;
+}
+
+.modal {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: min(560px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+}
+
+.modal__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.modal__subtitle {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.modal__body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--border);
+}
+
+.modal__body .field textarea.field__input {
+  resize: vertical;
+}
+
+.modal__body .form__result {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(248, 113, 113, 0.08);
+}
+
 /* --- Responsive ---------------------------------------------------------- */
 
 @media (max-width: 1100px) {
   .layout {
+    flex-direction: column;
     overflow-y: auto;
+  }
+
+  .layout__main {
+    flex: 0 0 auto;
   }
 
   .layout__top {
     grid-template-columns: 1fr;
+  }
+
+  .layout__blotter {
+    flex: 0 0 auto;
+  }
+
+  .layout__rail {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+
+  .layout__rail > .panel {
+    flex: 0 0 auto;
+    min-height: 0;
   }
 }
 
@@ -551,4 +685,39 @@ body {
   margin-left: 8px;
   padding: 2px 8px;
   font-size: 12px;
+}
+
+/* --- Natural-language trade entry  -------------------------------- */
+
+.nl-entry {
+  padding: 12px 16px;
+}
+
+.nl-entry .form--row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.nl-entry .nl-entry__text {
+  flex: 1 1 320px;
+}
+
+.nl-entry__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.nl-entry textarea.field__input {
+  resize: vertical;
+  font-family: var(--font);
+}
+
+.badge--info {
+  background: rgba(56, 132, 255, 0.15);
+  color: #7fb0ff;
+  border: 1px solid rgba(56, 132, 255, 0.4);
 }

@@ -6,7 +6,14 @@ from sqlalchemy import Date, cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.models.enums import CurrencyPair, InstrumentType, TradeState, TradeStatus
+from app.models.enums import (
+    Currency,
+    CurrencyPair,
+    Direction,
+    InstrumentType,
+    TradeState,
+    TradeStatus,
+)
 from app.models.trade import Trade
 from app.models.trade_state import TradeStateLog
 from app.schemas.trade import (
@@ -17,9 +24,43 @@ from app.schemas.trade import (
     TradeRead,
 )
 from app.services import trade_lifecycle
-from app.services.business_calendar import effective_trade_date
+from app.services.business_calendar import (
+    effective_trade_date,
+    is_business_day,
+    spot_value_date,
+)
 
 router = APIRouter(prefix="/trades", tags=["trades"])
+
+
+def _validate_settlement(
+    trade_type: InstrumentType, settlement_date: date, trade_date: date
+) -> None:
+    """Re-apply the booking settlement rules against a trade's own trade_date."""
+    spot = spot_value_date(trade_date)
+    if not is_business_day(settlement_date):
+        raise HTTPException(
+            status_code=422,
+            detail="settlement_date must be a business day (Mon-Fri)",
+        )
+    if trade_type == InstrumentType.SPOT:
+        if not (trade_date <= settlement_date <= spot):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"SPOT settlement_date must be between {trade_date} and {spot} "
+                    f"(trade date + 2 business days); use FORWARD for later dates"
+                ),
+            )
+    else:  # FORWARD
+        if settlement_date <= spot:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"FORWARD settlement_date must be after {spot} "
+                    f"(trade date + 2 business days)"
+                ),
+            )
 
 
 @router.post("", response_model=TradeRead, status_code=201)
@@ -133,16 +174,67 @@ async def amend_trade(
     trade = await db.get(Trade, trade_id)
     if trade is None:
         raise HTTPException(status_code=404, detail="Trade not found")
+
+    # The instrument type selects the details schema, so it can't change on
+    # amend; only the economics within the existing type may be edited.
+    if payload.instrument_details is not None and (
+        payload.instrument_details.instrument_type != trade.instrument_type.value
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"instrument_details.instrument_type "
+                f"({payload.instrument_details.instrument_type}) does not match "
+                f"the trade's instrument_type ({trade.instrument_type.value})"
+            ),
+        )
+
+    # For SPOT/FORWARD, validate the new settlement date against the trade's own
+    # trade_date (the trade may have been booked days ago, not today).
+    if (
+        payload.instrument_details is not None
+        and trade.instrument_type in (InstrumentType.SPOT, InstrumentType.FORWARD)
+    ):
+        _validate_settlement(
+            trade.instrument_type,
+            payload.instrument_details.settlement_date,
+            trade.trade_date,
+        )
+
     try:
         await trade_lifecycle.amend_trade(db, trade, notes=payload.comment)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    if payload.currency_pair is not None:
+        trade.currency_pair = payload.currency_pair
+        trade.currency_1 = Currency(payload.currency_pair.value[:3])
+        trade.currency_2 = Currency(payload.currency_pair.value[3:])
+    if payload.direction is not None:
+        trade.direction = payload.direction
+    if payload.counterparty is not None:
+        trade.counterparty = payload.counterparty
     if payload.notional_1 is not None:
         trade.notional_1 = payload.notional_1
-    if payload.notional_2 is not None:
-        trade.notional_2 = payload.notional_2
     if payload.comment is not None:
         trade.comment = payload.comment
+
+    if payload.instrument_details is not None:
+        trade.instrument_details = payload.instrument_details.model_dump(mode="json")
+
+    # For SPOT/FORWARD the counterpart notional (notional_2) is derived as
+    # notional_1 × rate, so keep it consistent with the amended values unless
+    # the caller supplied it explicitly. OPTION trades don't store a notional_2.
+    if payload.notional_2 is not None:
+        trade.notional_2 = payload.notional_2
+    elif trade.instrument_type in (InstrumentType.SPOT, InstrumentType.FORWARD):
+        rate = (
+            payload.instrument_details.rate
+            if payload.instrument_details is not None
+            else trade.instrument_details.get("rate")
+        )
+        trade.notional_2 = round(float(trade.notional_1) * float(rate), 2)
+
     await db.commit()
     await db.refresh(trade)
     return trade

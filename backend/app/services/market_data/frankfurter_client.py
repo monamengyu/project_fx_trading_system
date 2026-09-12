@@ -13,6 +13,7 @@ import httpx
 
 from app.models.enums import CurrencyPair
 from app.services.market_data.cache import market_data_cache
+from app.services.market_data.pairs import fetch_symbols
 
 FRANKFURTER_URL = "https://api.frankfurter.dev/v1/latest"
 
@@ -22,7 +23,7 @@ async def fetch_rate(pair: CurrencyPair) -> tuple[float, date]:
 
     Raises ``RuntimeError`` if the upstream request fails.
     """
-    base, quote = pair.value[:3], pair.value[3:]
+    base, quote = fetch_symbols(pair.value)
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(

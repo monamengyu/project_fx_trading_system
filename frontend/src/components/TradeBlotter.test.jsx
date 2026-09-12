@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { TradeBlotter } from "./TradeBlotter.jsx";
 import { amendTrade, cancelTrade, confirmTrade } from "../services/trades.js";
 
@@ -6,6 +6,10 @@ vi.mock("../services/trades.js", () => ({
   confirmTrade: vi.fn(),
   cancelTrade: vi.fn(),
   amendTrade: vi.fn(),
+}));
+
+vi.mock("../hooks/useSupportedPairs.js", () => ({
+  useSupportedPairs: () => ["EURUSD", "GBPUSD", "USDJPY"],
 }));
 
 vi.mock("./DateRangePicker.jsx", () => ({
@@ -77,12 +81,74 @@ describe("TradeBlotter", () => {
     expect(row.getByText("BUY")).toBeInTheDocument();
     expect(row.getByText("1.085")).toBeInTheDocument();
     expect(row.getByText("EUR")).toBeInTheDocument();
-    expect(row.getByText("1000000")).toBeInTheDocument();
+    expect(row.getByText("1,000,000")).toBeInTheDocument();
     expect(row.getByText("USD")).toBeInTheDocument();
-    expect(row.getByText("1085000")).toBeInTheDocument();
+    expect(row.getByText("1,085,000")).toBeInTheDocument();
     expect(row.getByText("2026-08-19")).toBeInTheDocument();
     expect(row.getByText("BANK_A")).toBeInTheDocument();
     expect(row.getByText("BOOKED")).toBeInTheDocument();
+  });
+
+  it("derives notional 2 for an OPTION as notional 1 × strike rate", () => {
+    const optionTrade = {
+      ...trade,
+      instrument_type: "OPTION",
+      notional_2: undefined,
+      comment: "1M EUR call USD put at 1.085",
+      instrument_details: {
+        instrument_type: "OPTION",
+        option_type: "CALL",
+        strike_rate: 1.085,
+        expiry_date: "2027-07-30",
+        delivery_date: "2027-08-02",
+        premium_date: "2026-08-19",
+        premium: 12500,
+        premium_currency: "USD",
+        exercise_style: "EUROPEAN",
+      },
+    };
+    renderBlotter({ trades: [optionTrade] });
+    const row = within(screen.getByRole("row", { name: /abc-123/ }));
+    expect(row.getByText("1,085,000")).toBeInTheDocument();
+  });
+
+  it("shows all trade fields in the row", () => {
+    renderBlotter({ trades: [trade] });
+    const row = within(screen.getByRole("row", { name: /abc-123/ }));
+    expect(row.getByText("2026-08-16")).toBeInTheDocument(); // trade date
+    expect(row.getByText("2026-08-19")).toBeInTheDocument(); // settlement
+    expect(row.queryByText("CALL")).not.toBeInTheDocument(); // spot has no option fields
+    expect(row.getAllByText("—").length).toBeGreaterThan(0); // option cols are empty
+  });
+
+  it("shows all OPTION fields in the row", () => {
+    const optionTrade = {
+      ...trade,
+      instrument_type: "OPTION",
+      notional_2: undefined,
+      comment: "1M EUR call USD put at 1.085",
+      instrument_details: {
+        instrument_type: "OPTION",
+        option_type: "CALL",
+        strike_rate: 1.085,
+        expiry_date: "2027-07-30",
+        delivery_date: "2027-08-02",
+        premium_date: "2026-08-19",
+        premium: 12500,
+        premium_currency: "USD",
+        exercise_style: "EUROPEAN",
+      },
+    };
+    renderBlotter({ trades: [optionTrade] });
+    const row = within(screen.getByRole("row", { name: /abc-123/ }));
+    expect(row.getByText("CALL")).toBeInTheDocument();
+    expect(row.getByText("2027-07-30")).toBeInTheDocument(); // expiry
+    expect(row.getByText("2027-08-02")).toBeInTheDocument(); // delivery
+    expect(row.getByText("2026-08-19")).toBeInTheDocument(); // premium date
+    expect(row.getByText("12,500")).toBeInTheDocument(); // premium
+    expect(row.getAllByText("USD").length).toBeGreaterThanOrEqual(2); // currency 2 + premium ccy
+    expect(row.getByText("EUROPEAN")).toBeInTheDocument(); // exercise style
+    expect(row.getByText("1M EUR call USD put at 1.085")).toBeInTheDocument(); // comment
   });
 
   it("shows an error when the request fails", () => {
@@ -136,5 +202,197 @@ describe("TradeBlotter", () => {
     renderBlotter({ setFilters, filters: { status: "BOOKED" } });
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     expect(setFilters).toHaveBeenCalledWith({});
+  });
+
+  it("places the Comment column last, after Actions", () => {
+    renderBlotter({ trades: [trade] });
+    const headers = screen.getAllByRole("columnheader").map((th) => th.textContent);
+    expect(headers[headers.length - 1]).toBe("Comment");
+    expect(headers[headers.length - 2]).toBe("Actions");
+  });
+
+  it("opens the amend dialog from a BOOKED trade with prefilled fields", () => {
+    renderBlotter({ trades: [trade] });
+    fireEvent.click(screen.getByRole("button", { name: "Amend" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByRole("heading", { name: "Amend Trade" }),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Currency Pair")).toHaveValue("EURUSD");
+    expect(within(dialog).getByLabelText("Notional 1")).toHaveValue("1,000,000");
+    expect(within(dialog).getByLabelText("Notional 2")).toHaveValue("1,085,000");
+    expect(within(dialog).getByLabelText("Rate")).toHaveValue("1.085");
+    expect(within(dialog).getByLabelText("Settlement Date")).toHaveValue("2026-08-19");
+    // The Save button stays disabled until something actually changes.
+    expect(within(dialog).getByRole("button", { name: "Save Changes" })).toBeDisabled();
+  });
+
+  it("opens the amend dialog for an OPTION with derived Notional 2 and formatted premium", () => {
+    const optionTrade = {
+      ...trade,
+      instrument_type: "OPTION",
+      notional_2: undefined,
+      instrument_details: {
+        instrument_type: "OPTION",
+        option_type: "CALL",
+        strike_rate: 1.085,
+        expiry_date: "2027-07-30",
+        delivery_date: "2027-08-02",
+        premium_date: "2026-08-19",
+        premium: 12500,
+        premium_currency: "USD",
+        exercise_style: "EUROPEAN",
+      },
+    };
+    renderBlotter({ trades: [optionTrade] });
+    fireEvent.click(screen.getByRole("button", { name: "Amend" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByLabelText("Notional 1")).toHaveValue("1,000,000");
+    expect(within(dialog).getByLabelText("Notional 2")).toHaveValue("1,085,000");
+    expect(within(dialog).getByLabelText("Strike Rate")).toHaveValue("1.085");
+    expect(within(dialog).getByLabelText("Premium")).toHaveValue("12,500");
+  });
+
+  it("derives Notional 1 when Notional 2 is edited (inverse of rate)", () => {
+    renderBlotter({ trades: [trade] });
+    fireEvent.click(screen.getByRole("button", { name: "Amend" }));
+    const dialog = screen.getByRole("dialog");
+
+    fireEvent.change(within(dialog).getByLabelText("Notional 2"), {
+      target: { value: "1,000,000" },
+    });
+    expect(within(dialog).getByLabelText("Notional 1")).toHaveValue("921,658.99");
+    expect(
+      within(dialog).getByRole("button", { name: "Save Changes" }),
+    ).toBeEnabled();
+  });
+
+  it("shows no Amend action for trades that are not BOOKED", () => {
+    renderBlotter({ trades: [{ ...trade, status: "PENDING_CONFIRMATION" }] });
+    expect(screen.queryByRole("button", { name: "Amend" })).not.toBeInTheDocument();
+  });
+
+  it("saves amended trade details and refreshes", async () => {
+    amendTrade.mockResolvedValue({ trade_id: "abc-123" });
+    const onRefresh = vi.fn();
+    renderBlotter({ trades: [trade], onRefresh });
+
+    fireEvent.click(screen.getByRole("button", { name: "Amend" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Notional 1"), {
+      target: { value: "2,000,000" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Direction"), {
+      target: { value: "SELL" },
+    });
+
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Save Changes" }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save Changes" }));
+
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+    expect(amendTrade).toHaveBeenCalledWith("abc-123", {
+      currency_pair: "EURUSD",
+      direction: "SELL",
+      counterparty: "BANK_A",
+      notional_1: 2000000,
+      notional_2: 2170000,
+      comment: "",
+      instrument_details: {
+        instrument_type: "SPOT",
+        rate: 1.085,
+        settlement_date: "2026-08-19",
+      },
+    });
+    // The dialog closes after a successful save.
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("closes the amend dialog without saving on Cancel", () => {
+    renderBlotter({ trades: [trade] });
+    fireEvent.click(screen.getByRole("button", { name: "Amend" }));
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }),
+    );
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(amendTrade).not.toHaveBeenCalled();
+  });
+
+  describe("live MTM column", () => {
+    class FakeWebSocket {
+      static instances = [];
+
+      constructor(url) {
+        this.url = url;
+        this.onmessage = null;
+        this.onclose = null;
+        FakeWebSocket.instances.push(this);
+      }
+
+      close() {
+        this.onclose?.();
+      }
+
+      emit(data) {
+        this.onmessage?.({ data });
+      }
+    }
+
+    function emitMtm(tradeId, mtmValue) {
+      FakeWebSocket.instances[0].emit(
+        JSON.stringify({ trade_id: tradeId, mtm_value: mtmValue, as_of: "2026-08-14T09:30:00Z" }),
+      );
+    }
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      FakeWebSocket.instances.length = 0;
+    });
+
+    it("adds the MTM (USD) column before Actions, keeping Comment last", () => {
+      renderBlotter({ trades: [trade] });
+      const headers = screen.getAllByRole("columnheader").map((th) => th.textContent);
+      expect(headers[headers.length - 3]).toBe("MTM (USD)");
+      expect(headers[headers.length - 2]).toBe("Actions");
+      expect(headers[headers.length - 1]).toBe("Comment");
+    });
+
+    it("shows a positive live MTM value for a BOOKED trade", () => {
+      vi.stubGlobal("WebSocket", FakeWebSocket);
+      renderBlotter({ trades: [trade] });
+      act(() => emitMtm("abc-123", 1250.5));
+
+      const cell = within(screen.getByRole("row", { name: /abc-123/ })).getByText(
+        "1,250.5",
+      );
+      expect(cell).toHaveClass("blotter__mtm");
+      expect(cell).not.toHaveClass("blotter__mtm--negative");
+    });
+
+    it("marks a negative live MTM value", () => {
+      vi.stubGlobal("WebSocket", FakeWebSocket);
+      renderBlotter({ trades: [trade] });
+      act(() => emitMtm("abc-123", -800));
+
+      const cell = within(screen.getByRole("row", { name: /abc-123/ })).getByText(
+        "-800",
+      );
+      expect(cell).toHaveClass("blotter__mtm--negative");
+    });
+
+    it("shows no MTM value for a trade that is not BOOKED", () => {
+      vi.stubGlobal("WebSocket", FakeWebSocket);
+      renderBlotter({ trades: [{ ...trade, status: "CANCELLED" }] });
+      act(() => emitMtm("abc-123", 1250.5));
+
+      const row = screen.getByRole("row", { name: /abc-123/ });
+      expect(row.querySelector(".blotter__mtm")).toBeNull();
+    });
   });
 });

@@ -15,5 +15,26 @@ class Settings(BaseSettings):
     # Browser origins allowed to call the API (the React dev server).
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
+    # NL trade parsing
+    nl_parse_default_model: str = "rule-based"
+    # A single OpenRouter API key enables all hosted LLM models in the dropdown.
+    openrouter_api_key: str | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # OpenRouter model IDs offered in the NL parse dropdown (JSON list in .env)
+    openrouter_models: list[str] = [
+        "openai/gpt-4o-mini",
+        "openai/gpt-4o",
+        "anthropic/claude-sonnet-4-5",
+        "google/gemini-2.0-flash-001",
+        "deepseek/deepseek-v4-flash-0731",
+        "z-ai/glm-5.3-flash",
+    ]
+    ollama_base_url: str = "http://localhost:11434/v1"
+    # Local Ollama model IDs offered in the NL parse dropdown (JSON list in .env)
+    ollama_models: list[str] = ["llama3.2:3b", "qwen2.5:3b", "gemma2:2b", "phi3.5"]
+    # Generous timeout: cold-loading a large local model (e.g. phi3.5) on CPU
+    # can take ~80s before the first token arrives.
+    llm_request_timeout_seconds: int = 120
+
 
 settings = Settings()

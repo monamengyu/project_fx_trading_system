@@ -25,7 +25,11 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-fxuser}:${POSTGRES_PASSWORD:-fxpassword}@postgres:5432/${POSTGRES_DB:-fx_trading}
-      LLM_API_KEY: ${LLM_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      # Ollama runs in WSL; host.docker.internal resolves to the WSL host via extra_hosts below.
+      OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     volumes:

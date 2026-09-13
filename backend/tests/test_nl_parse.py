@@ -5,11 +5,31 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.models.enums import InstrumentType
-from app.services.business_calendar import effective_trade_date, spot_value_date
+from app.models.enums import CurrencyPair, InstrumentType
+from app.services.business_calendar import (
+    add_business_days,
+    current_trade_date,
+    effective_trade_date,
+    override_trade_date,
+    spot_value_date,
+)
+from app.services.market_data.pairs import SUPPORTED_PAIRS
 from app.services.nl_parse.baseline import ParseError, parse_rule_based
-from app.services.nl_parse.parser import draft_to_trade_create
+from app.services.nl_parse.parser import (
+    DEFAULT_FORWARD_TENOR_DAYS,
+    draft_to_trade_create,
+    parse_trade,
+    resolve_draft,
+)
+from app.services.nl_parse.prompts import build_system_prompt
 from app.services.nl_parse.schemas import NLTradeDraft, ParsedInstrument
+from evaluation.frozen_rates import FrozenRateProvider, MissingFrozenRate
+
+
+# A fixed Monday, and the spot value date that belongs to it. Pinning the trade
+# date is what makes a recorded corpus replayable on a later day.
+PINNED_DAY = date(2026, 6, 1)
+PINNED_SPOT = date(2026, 6, 3)
 
 
 def _draft(**overrides):
@@ -190,6 +210,101 @@ async def test_resolver_rejects_bad_settlement_window():
         await draft_to_trade_create(draft)
 
 
+async def test_pinned_date_keeps_resolver_and_validator_in_step():
+    """Regression: pinning only the resolver made the validator reject its output.
+
+    The settlement date below is valid for the pinned day but in the past
+    relative to the real today, so this only passes while the resolver and
+    ``TradeCreate``'s settlement-window validator read the same day.
+    """
+    before = current_trade_date()
+    draft = _draft(
+        instrument=ParsedInstrument(
+            instrument_type="SPOT", rate=1.085, settlement_date=PINNED_SPOT
+        )
+    )
+    with override_trade_date(PINNED_DAY):
+        assert current_trade_date() == PINNED_DAY
+        resolved = await resolve_draft(draft)
+    assert current_trade_date() == before
+    assert resolved.defaulted_fields == []
+    assert resolved.trade.instrument_details.settlement_date == PINNED_SPOT
+
+
+async def test_resolver_derives_spot_settlement_from_the_pin():
+    draft = _draft()
+    with override_trade_date(PINNED_DAY):
+        resolved = await resolve_draft(draft)
+    assert resolved.trade.instrument_details.settlement_date == PINNED_SPOT
+    assert resolved.defaulted_fields == ["settlement_date"]
+
+
+async def test_resolver_derives_forward_settlement_from_the_pin():
+    draft = _draft(
+        instrument_type="FORWARD",
+        instrument=ParsedInstrument(instrument_type="FORWARD", rate=1.09),
+    )
+    with override_trade_date(PINNED_DAY):
+        resolved = await resolve_draft(draft)
+    assert resolved.trade.instrument_details.settlement_date == add_business_days(
+        PINNED_DAY, DEFAULT_FORWARD_TENOR_DAYS
+    )
+
+
+async def test_resolver_records_not_one_default_for_a_complete_option_draft():
+    draft = _draft(
+        instrument_type="OPTION",
+        instrument=ParsedInstrument(
+            instrument_type="OPTION",
+            option_type="PUT",
+            strike_rate=1.10,
+            premium_date=date(2026, 6, 3),
+            expiry_date=date(2026, 12, 18),
+            delivery_date=date(2026, 12, 18),
+            premium=25_000.0,
+            premium_currency="USD",
+            exercise_style="EUROPEAN",
+        ),
+    )
+    with override_trade_date(PINNED_DAY):
+        resolved = await resolve_draft(draft)
+    assert resolved.defaulted_fields == []
+
+
+async def test_resolver_enumerates_every_invented_option_default():
+    draft = _draft(
+        instrument_type="OPTION",
+        instrument=ParsedInstrument(
+            instrument_type="OPTION", expiry_date=date(2026, 12, 18)
+        ),
+    )
+    with override_trade_date(PINNED_DAY):
+        resolved = await resolve_draft(draft)
+    assert set(resolved.defaulted_fields) == {
+        "option_type",
+        "strike_rate",
+        "premium_date",
+        "delivery_date",
+        "premium",
+        "premium_currency",
+        "exercise_style",
+    }
+    assert resolved.trade.instrument_details.premium_date == PINNED_SPOT
+
+
+async def test_resolver_does_not_flag_a_market_resolved_rate():
+    draft = _draft()
+    draft.instrument.rate = None
+
+    async def provider(pair):
+        return 1.2345, date(2026, 6, 1)
+
+    with override_trade_date(PINNED_DAY):
+        resolved = await resolve_draft(draft, rate_provider=provider)
+    assert resolved.trade.instrument_details.rate == 1.2345
+    assert "rate" not in resolved.defaulted_fields
+
+
 _VALID_SPOT_CONTENT = {
     "instrument_type": "SPOT",
     "currency_pair": "EURUSD",
@@ -203,7 +318,6 @@ _VALID_SPOT_CONTENT = {
 
 async def test_parse_trade_propagates_usage_from_model():
     from app.services.nl_parse.clients import Completion
-    from app.services.nl_parse.parser import parse_trade
 
     class FakeClient:
         async def complete_json(self, system, user):
@@ -219,7 +333,6 @@ async def test_parse_trade_propagates_usage_from_model():
 
 async def test_parse_trade_accumulates_usage_across_retry():
     from app.services.nl_parse.clients import Completion
-    from app.services.nl_parse.parser import parse_trade
 
     calls = {"n": 0}
 
@@ -236,3 +349,100 @@ async def test_parse_trade_accumulates_usage_across_retry():
     assert calls["n"] == 2
     assert result.usage == {"total_tokens": 27}
     assert result.model == "llama3.2:3b"
+
+
+async def test_parse_trade_reports_defaults_from_the_resolver():
+    from app.services.nl_parse.clients import Completion
+
+    class FakeClient:
+        async def complete_json(self, system, user):
+            return Completion(content=_VALID_SPOT_CONTENT, usage={})
+
+    with override_trade_date(PINNED_DAY):
+        with patch("app.services.nl_parse.parser.get_client", return_value=FakeClient()):
+            result = await parse_trade("Buy EURUSD spot", model_id="llama3.2:3b")
+
+    assert result.defaulted_fields == ["settlement_date"]
+    assert result.trade.instrument_details.settlement_date == PINNED_SPOT
+
+
+async def test_parse_trade_uses_the_injected_rate_provider():
+    from app.services.nl_parse.clients import Completion
+
+    content = dict(_VALID_SPOT_CONTENT)
+    content["instrument"] = {"instrument_type": "SPOT", "rate": None}
+    used = []
+
+    class FakeClient:
+        async def complete_json(self, system, user):
+            return Completion(content=content, usage={})
+
+    async def provider(pair):
+        used.append(pair)
+        return 1.4321, date(2026, 6, 1)
+
+    with override_trade_date(PINNED_DAY):
+        with patch("app.services.nl_parse.parser.get_client", return_value=FakeClient()):
+            result = await parse_trade(
+                "Buy EURUSD spot", model_id="llama3.2:3b", rate_provider=provider
+            )
+
+    assert used == [CurrencyPair.EURUSD]
+    assert result.trade.instrument_details.rate == 1.4321
+
+
+def test_system_prompt_honours_the_pin():
+    with override_trade_date(PINNED_DAY):
+        prompt = build_system_prompt()
+    assert PINNED_DAY.isoformat() in prompt
+    assert PINNED_SPOT.isoformat() in prompt
+
+
+def test_rule_based_baseline_honours_the_pin():
+    with override_trade_date(PINNED_DAY):
+        result = parse_rule_based("Buy 5 million norwegian kroner for usd spot at 10.2")
+    assert result["instrument"]["settlement_date"] == PINNED_SPOT.isoformat()
+
+
+async def test_frozen_rate_provider_replays_the_same_rate():
+    provider = FrozenRateProvider.from_file()
+    first = await provider(CurrencyPair.EURUSD)
+    assert await provider(CurrencyPair.EURUSD) == first
+    rate, as_of = first
+    assert isinstance(rate, float)
+    assert rate > 0
+    assert isinstance(as_of, date)
+
+
+def test_frozen_snapshot_covers_every_supported_pair():
+    assert FrozenRateProvider.from_file().pairs == set(SUPPORTED_PAIRS)
+
+
+async def test_frozen_rate_provider_refuses_an_unrecorded_pair():
+    provider = FrozenRateProvider({})
+    with pytest.raises(MissingFrozenRate):
+        await provider(CurrencyPair.EURUSD)
+    # Not a ValueError/RuntimeError, or the resolver would convert it into a
+    # ParseError and the retry loop would report a broken harness as a model
+    # that could not parse its input.
+    assert not issubclass(MissingFrozenRate, (ValueError, RuntimeError))
+
+
+async def test_missing_frozen_rate_is_not_reported_as_a_parse_failure():
+    from app.services.nl_parse.clients import Completion
+
+    content = dict(_VALID_SPOT_CONTENT)
+    content["instrument"] = {"instrument_type": "SPOT", "rate": None}
+
+    class FakeClient:
+        async def complete_json(self, system, user):
+            return Completion(content=content, usage={})
+
+    with override_trade_date(PINNED_DAY):
+        with patch("app.services.nl_parse.parser.get_client", return_value=FakeClient()):
+            with pytest.raises(MissingFrozenRate):
+                await parse_trade(
+                    "Buy EURUSD spot",
+                    model_id="llama3.2:3b",
+                    rate_provider=FrozenRateProvider({}),
+                )

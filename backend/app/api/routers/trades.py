@@ -25,7 +25,7 @@ from app.schemas.trade import (
 )
 from app.services import trade_lifecycle
 from app.services.business_calendar import (
-    effective_trade_date,
+    current_trade_date,
     is_business_day,
     spot_value_date,
 )
@@ -69,7 +69,7 @@ async def create_trade(payload: TradeCreate, db: AsyncSession = Depends(get_db))
         **payload.model_dump(exclude={"instrument_details"}),  # Unpack the payload excluding instrument_details straight into Trade()
         instrument_details=payload.instrument_details.model_dump(mode="json"),
         # roll weekends forward so trade_date is always a business day
-        trade_date=effective_trade_date(date.today()),
+        trade_date=current_trade_date(),
         status=TradeStatus.PENDING_CONFIRMATION,
     )
     db.add(trade)

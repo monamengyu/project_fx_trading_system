@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from app.services.business_calendar import effective_trade_date, spot_value_date
+from app.services.business_calendar import current_trade_date, spot_value_date
 from app.services.market_data.pairs import SUPPORTED_PAIRS
 
 SYSTEM_PROMPT = """You are an FX trade desk assistant. Convert a trader's natural-language instruction into a single structured JSON trade. Respond with ONLY valid JSON — no prose, no markdown, no code fences.
@@ -126,7 +126,7 @@ FEW_SHOT_EXAMPLES: list[tuple[str, dict]] = [
 
 
 def build_system_prompt(today: date | None = None) -> str:
-    today = today or effective_trade_date(date.today())
+    today = today or current_trade_date()
     spot = spot_value_date(today)
     return SYSTEM_PROMPT.format(
         today=today.isoformat(),

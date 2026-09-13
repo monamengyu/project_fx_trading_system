@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, field_serializer, model_validator
 from app.models.enums import InstrumentType, CurrencyPair, Direction, Currency, TradeStatus, TradeState
 from app.schemas.instrument_details import InstrumentDetails
 from app.services.business_calendar import (
-    effective_trade_date,
+    current_trade_date,
     is_business_day,
     spot_value_date,
 )
@@ -38,10 +38,11 @@ class TradeCreate(BaseModel):
     def check_settlement_within_spot_window(self):
         # trade_date is server-assigned at booking time to the effective trade
         # date (today, rolled forward to a business day), so the spot window is
-        # anchored on the same date.
+        # anchored on the same date. Evaluation runs pin that date so a recorded
+        # corpus replays unchanged; see business_calendar.override_trade_date.
         if self.instrument_type == InstrumentType.OPTION:
             return self  # options use delivery_date, not settlement_date
-        trade_date = effective_trade_date(date.today())
+        trade_date = current_trade_date()
         spot = spot_value_date(trade_date)
         settlement = self.instrument_details.settlement_date
         if not is_business_day(settlement):

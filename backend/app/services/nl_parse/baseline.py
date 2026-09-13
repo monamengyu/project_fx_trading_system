@@ -10,6 +10,7 @@ from datetime import date
 
 from app.services.business_calendar import (
     add_business_days,
+    current_trade_date,
     effective_trade_date,
     spot_value_date,
 )
@@ -137,7 +138,7 @@ def _tenor_settlement(text: str) -> date | None:
         return None
     count = int(m.group(1))
     unit = m.group(2).lower()
-    base = effective_trade_date(date.today())
+    base = current_trade_date()
     if unit.startswith("month"):
         return effective_trade_date(_add_months(base, count))
     return effective_trade_date(base + __import__("datetime").timedelta(days=7 * count))
@@ -215,11 +216,11 @@ def parse_rule_based(text: str) -> dict:
             settlement = (
                 explicit_settlement
                 or tenor_settlement
-                or effective_trade_date(_add_months(date.today(), 1))
+                or effective_trade_date(_add_months(current_trade_date(), 1))
             )
         else:
             instrument_type = "SPOT"
-            settlement = spot_value_date(effective_trade_date(date.today()))
+            settlement = spot_value_date(current_trade_date())
         rate_m = _RATE.search(lower)
         rate = float(rate_m.group(1)) if rate_m else None
         instrument = {

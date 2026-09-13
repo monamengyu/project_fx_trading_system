@@ -1,5 +1,4 @@
 from datetime import date, timedelta
-from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -12,6 +11,7 @@ from app.models.trade_state import TradeStateLog
 from app.services.business_calendar import (
     add_business_days,
     effective_trade_date,
+    override_trade_date,
     spot_value_date,
 )
 
@@ -131,7 +131,8 @@ async def test_list_trades_paginates(client):
 
 
 async def test_trade_date_rolls_forward_on_weekend(client):
-    # next Saturday from the real today
+    # next Saturday from the real today; pinned so the booking and the
+    # settlement-window validator agree on which day it is
     d = date.today()
     saturday = d + timedelta(days=(5 - d.weekday()) % 7)
     monday = saturday + timedelta(days=2)
@@ -144,11 +145,7 @@ async def test_trade_date_rolls_forward_on_weekend(client):
             "settlement_date": spot_value_date(effective).isoformat(),
         },
     }
-    with patch("app.api.routers.trades.date") as mock_router_date, patch(
-        "app.schemas.trade.date"
-    ) as mock_schema_date:
-        mock_router_date.today.return_value = saturday
-        mock_schema_date.today.return_value = saturday
+    with override_trade_date(saturday):
         response = await client.post("/trades", json=payload)
 
     assert response.status_code == 201

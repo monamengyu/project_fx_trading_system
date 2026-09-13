@@ -310,8 +310,8 @@ trade is persisted by this endpoint.
 
 Models: `rule-based` (baseline, always), one entry per ID in the
 `OPENROUTER_MODELS` env list (JSON) served via OpenRouter — e.g.
-`openai/gpt-4o-mini`, `anthropic/claude-sonnet-4-5`,
-`google/gemini-2.0-flash-001` — listed only when `OPENROUTER_API_KEY` is set,
+`openai/gpt-5.6-luna`, `anthropic/claude-sonnet-5`,
+`google/gemini-3.8-flash` — listed only when `OPENROUTER_API_KEY` is set,
 and one entry per ID in the `OLLAMA_MODELS` env list (local, always). Missing rates are resolved from the live market rate; missing
 option fields get defaults (premium 0, delivery = expiry, EUROPEAN style).
 

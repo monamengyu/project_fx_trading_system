@@ -33,7 +33,7 @@ def test_registry_lists_openrouter_models_when_keyed(monkeypatch):
     monkeypatch.setattr(settings, "openrouter_api_key", "sk-or-test")
     ids = [m.id for m in available_models()]
     assert any(i.startswith("openai/") for i in ids)
-    assert any("claude-sonnet-4-5" in i for i in ids)
+    assert any(i.startswith("anthropic/") for i in ids)
     assert any(i.startswith("google/") for i in ids)
 
 

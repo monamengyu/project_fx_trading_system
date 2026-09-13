@@ -22,10 +22,9 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     # OpenRouter model IDs offered in the NL parse dropdown (JSON list in .env)
     openrouter_models: list[str] = [
-        "openai/gpt-4o-mini",
-        "openai/gpt-4o",
-        "anthropic/claude-sonnet-4-5",
-        "google/gemini-2.0-flash-001",
+        "openai/gpt-5.6-luna",
+        "anthropic/claude-sonnet-5",
+        "google/gemini-3.8-flash",
         "deepseek/deepseek-v4-flash-0731",
         "z-ai/glm-5.3-flash",
     ]

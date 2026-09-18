@@ -67,6 +67,15 @@ class FrozenRateProvider:
         """The pair codes this snapshot can price."""
         return set(self._rates)
 
+    @property
+    def rates(self) -> dict[str, tuple[float, date]]:
+        """The snapshot's ``{pair: (rate, as_of)}`` entries.
+
+        Read by the corpus builder, which needs the frozen levels to state a
+        strike or a premium that the snapshot will then agree with.
+        """
+        return dict(self._rates)
+
 
 async def record_snapshot(path: Path | str | None = None) -> Path:
     """Fetch live rates for every supported pair and write a new snapshot."""

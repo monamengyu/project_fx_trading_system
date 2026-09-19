@@ -30,8 +30,28 @@ held-out reference for the other.
 
 Every item carries one ``capability`` tag naming the single skill its shifted arm
 exercises, so a failure is attributable to that skill rather than to "the
-sentence was hard". Only one slot differs between a tag's familiar and shifted
-arm.
+sentence was hard". A tag with more than one shifted spelling rotates through
+them by item, and the exact spelling an item used is recorded in its ``variant``
+field, so a result can be read per wording and not only per tag.
+
+Desk shorthand
+--------------
+Tickets are quoted in shorthand on a dealing desk, and a parser that only reads
+the long form is of little use. Both arms therefore use real shorthand:
+
+* ``m``/``mm`` and ``million``/``mio``; and ``billion``, ``bn``, ``bio``,
+  ``yard`` and ``yards`` for a thousand million;
+* ``forward``, ``frd`` and ``fwd``, and a bare ``opt`` in front of a call or put;
+* ``settling <date>``, ``value <date>``, ``forward in 3 months``, ``3-month
+  forward`` and ``3s`` (three months);
+* ``against``, ``versus`` and ``agst``; ``strike of`` and a leading ``K``;
+* the dealers' names for three pairs: ``cable`` (GBPUSD), ``aussie`` (AUDUSD) and
+  ``kiwi`` (NZDUSD).
+
+A tag's *familiar* arm uses a spelling the production rule-based parser already
+handles, which is what keeps the baseline the floor; its *shifted* arm uses one
+that parser cannot read, and that is what the tag measures. ``variant`` names
+which spelling an item actually used.
 
 Scope limits (deliberate, so a failure is never miscounted)
 ----------------------------------------------------------
@@ -68,8 +88,6 @@ from app.services.business_calendar import effective_trade_date
 from evaluation.frozen_rates import FrozenRateProvider
 
 DEFAULT_CORPUS_PATH = Path(__file__).with_name("corpus.json")
-
-CORPUS_VERSION = 1
 
 #: The single pinned trade date the whole corpus is built on. Every tenor, option
 #: expiry and settlement date below is relative to it, and the frozen snapshot
@@ -124,6 +142,30 @@ CURRENCY_WORDS: dict[str, str] = {
     "TRY": "turkish lira",
 }
 
+#: The pairs the market calls by a nickname instead of a code. Colloquial pair
+#: names are world knowledge rather than tokenisation, so they get a tag of their
+#: own rather than joining ``pair_code``.
+_NICKNAMES: dict[str, str] = {
+    "GBPUSD": "cable",
+    "AUDUSD": "aussie",
+    "NZDUSD": "kiwi",
+}
+
+#: The nickname pairs, in a fixed order so an item's pair is reproducible.
+_NICKNAME_PAIRS: list[str] = list(_NICKNAMES)
+
+#: Ways of writing a thousand million. The rule-based parser has no multiplier
+#: above a million, so every one of these is a spelling it cannot read. The list
+#: is kept at five because a single cell only holds three to five items: any
+#: longer list would leave spellings declared but never actually exercised.
+_BILLION_SPELLINGS: dict[str, str] = {
+    "billion": "{word} billion",
+    "bn": "{n}bn",
+    "bio": "{n}bio",
+    "yard": "{n} yard",
+    "yards": "{n} yards",
+}
+
 _NUMBER_WORDS = {
     1: "one",
     2: "two",
@@ -156,8 +198,10 @@ _MONTHS = [
 _SHARED_CAPABILITIES = (
     "pair_code",  # the pair's ISO code, e.g. ``EURUSD``
     "pair_words", # the pair's spoken name, e.g. ``euros against dollars``
+    "pair_nickname", # the pair's desk nickname, e.g. ``cable``
     "notional_suffix", # the notional with a ``m`` or ``mm`` suffix
     "notional_word", # the notional in words, e.g. ``five million``
+    "notional_billion", # a thousand times the usual magnitude, e.g. ``five bn``
     "notional_bare", # the notional as a bare number, e.g. ``5,000,000``
     "direction_verb", # the direction as a verb, e.g. ``buy`` or ``sell``
 )
@@ -174,6 +218,31 @@ _INSTRUMENT_CAPABILITIES: list[tuple[str, str]] = [
 CAPABILITIES: list[str] = [
     capability for capability, _ in _INSTRUMENT_CAPABILITIES
 ] + list(_SHARED_CAPABILITIES)
+
+#: Forward heads the rule-based parser already reads, so a forward can vary its
+#: wording while staying familiar.
+_FORWARD_HEADS: tuple[str, ...] = ("forward", "frd", "fwd")
+
+#: Option heads. A bare ``opt`` is a word the rule-based parser simply skips over,
+#: so it too is familiar. The empty head repeats so two items in three stay plain.
+_OPTION_HEADS: tuple[str, ...] = ("", "", "opt ")
+
+#: Every spelling a tag's shifted arm rotates through, keyed by tag. A tag with
+#: ``n`` spellings uses the item's cell position modulo ``n``; whichever it lands
+#: on is recorded on the item as its ``variant``.
+_SHIFTED_SPELLINGS: dict[str, tuple[str, ...]] = {
+    "tenor_form": ("hyphenated", "attached"),
+    "date_written": ("written_date", "value_date"),
+    "option_terms": ("premium_reordered", "opt_strike_K"),
+    "pair_code": ("hyphen",),
+    "pair_words": ("versus", "agst"),
+    "pair_nickname": tuple(_NICKNAMES.values()),
+    "notional_suffix": ("mm",),
+    "notional_word": ("mio",),
+    "notional_billion": tuple(_BILLION_SPELLINGS),
+    "notional_bare": ("apostrophe",),
+    "direction_verb": ("long_short",),
+}
 
 #: The tag for an item whose whole point is that no valid ticket exists.
 NO_VALID_TICKET = "no_valid_ticket"
@@ -207,7 +276,12 @@ class CorpusError(ValueError):
 
 @dataclass(frozen=True)
 class Ticket:
-    """A trade stated in full, before it is rendered as text."""
+    """A trade stated in full, before it is rendered as text.
+
+    ``variant`` names the exact shorthand the shifted arm will spell out and
+    ``head`` the word in front of the instrument, so the wording is part of the
+    ticket and the renderer only has to follow it.
+    """
 
     capability: str
     instrument_type: str
@@ -215,6 +289,7 @@ class Ticket:
     direction: str
     notional: float
     counterparty: str
+    variant: str
     tenor: tuple[int, str] | None = None
     settlement: date | None = None
     option_type: str | None = None
@@ -222,6 +297,7 @@ class Ticket:
     expiry: date | None = None
     premium: float | None = None
     premium_currency: str | None = None
+    head: str | None = None
 
 
 def _add_months(value: date, months: int) -> date:
@@ -246,6 +322,24 @@ def _tenor_date(tenor: tuple[int, str]) -> date:
     return effective_trade_date(_add_months(TRADE_DATE, count))
 
 
+def _shifted_variant(
+    capability: str, *, position: int, pair: str, tenor: tuple[int, str] | None
+) -> str:
+    """The shifted spelling the item at ``position`` of its cell uses.
+
+    Two tags need a hand-written rule rather than a rotation: a nickname tag is
+    the nickname *of the ticket's own pair*, and only a month tenor has a glued
+    ``3s`` form, so a week tenor stays hyphenated.
+    """
+    if capability == "pair_nickname":
+        return _NICKNAMES[pair]
+    if capability == "tenor_form":
+        attached = tenor is not None and tenor[1].startswith("month") and position % 2
+        return "attached" if attached else "hyphenated"
+    spellings = _SHIFTED_SPELLINGS[capability]
+    return spellings[position % len(spellings)]
+
+
 def _ticket(cell_index: int, k: int, split: str, rates: dict[str, float]) -> Ticket:
     """Choose the ticket occupying position ``k`` of cell ``cell_index``.
 
@@ -256,12 +350,20 @@ def _ticket(cell_index: int, k: int, split: str, rates: dict[str, float]) -> Tic
     capability, instrument_type = CELLS[cell_index]
 
     # B and C both offset into the value pools by 6; A does not. 7 is invertible
-    # modulo 15 and the offset difference is at most 9, so the pair - and hence
-    # the whole ticket - differs for every A/B pair of the same cell and k.
+    # modulo 16 and 7 x 6 = 42 divides neither 16 nor 10, so for every A/B pair of
+    # the same cell and k both the pair and the notional differ. A nickname cell
+    # pins the pair pool to three entries, and there the notional alone keeps A and
+    # B apart.
     v = k if split == "A" else k + 6
+    position = cell_index + v
 
-    pair = PAIRS[(4 * cell_index + 7 * v) % len(PAIRS)]
+    if capability == "pair_nickname":
+        pair = _NICKNAME_PAIRS[position % len(_NICKNAME_PAIRS)]
+    else:
+        pair = PAIRS[(4 * cell_index + 7 * v) % len(PAIRS)]
     notional = NOTIONALS[(3 * cell_index + 7 * v) % len(NOTIONALS)]
+    if capability == "notional_billion":
+        notional *= 1_000
 
     tenor = None
     settlement = None
@@ -290,6 +392,13 @@ def _ticket(cell_index: int, k: int, split: str, rates: dict[str, float]) -> Tic
         # the resolver would otherwise have chosen.
         premium_currency = pair[:3]
 
+    if instrument_type == FORWARD:
+        head = _FORWARD_HEADS[position % len(_FORWARD_HEADS)]
+    elif instrument_type == OPTION:
+        head = _OPTION_HEADS[position % len(_OPTION_HEADS)]
+    else:
+        head = None
+
     return Ticket(
         capability=capability,
         instrument_type=instrument_type,
@@ -297,6 +406,7 @@ def _ticket(cell_index: int, k: int, split: str, rates: dict[str, float]) -> Tic
         direction=("BUY", "SELL")[v % 2],
         notional=notional,
         counterparty=COUNTERPARTIES[(cell_index + v) % len(COUNTERPARTIES)],
+        variant=_shifted_variant(capability, position=position, pair=pair, tenor=tenor),
         tenor=tenor,
         settlement=settlement,
         option_type=option_type,
@@ -304,18 +414,27 @@ def _ticket(cell_index: int, k: int, split: str, rates: dict[str, float]) -> Tic
         expiry=expiry,
         premium=premium,
         premium_currency=premium_currency,
+        head=head,
     )
 
 
-def _render_notional(notional: float, capability: str, shifted: bool) -> str:
-    millions = int(round(notional / 1_000_000))
+def _render_notional(ticket: Ticket, shifted: bool) -> str:
+    capability = ticket.capability
+    millions = int(round(ticket.notional / 1_000_000))
     if capability == "notional_suffix":
         return f"{millions}mm" if shifted else f"{millions}m"
     if capability == "notional_word":
         word = _NUMBER_WORDS[millions]
         return f"{word} mio" if shifted else f"{word} million"
+    if capability == "notional_billion":
+        if not shifted:
+            return f"{ticket.notional:,.0f}"
+        billions = int(round(ticket.notional / 1_000_000_000))
+        return _BILLION_SPELLINGS[ticket.variant].format(
+            n=billions, word=_NUMBER_WORDS[billions]
+        )
     if capability == "notional_bare":
-        grouped = f"{notional:,.0f}"
+        grouped = f"{ticket.notional:,.0f}"
         return grouped.replace(",", "'") if shifted else grouped
     return f"{millions}m"
 
@@ -331,18 +450,28 @@ def _instrument_phrase(ticket: Ticket, shifted: bool) -> str:
     if ticket.instrument_type == FORWARD:
         if ticket.capability == "tenor_form":
             count, unit = ticket.tenor
-            if shifted:
-                return f"{count}-{unit.rstrip('s')} forward"
-            return f"forward in {count} {unit}"
+            if not shifted:
+                return f"{ticket.head} in {count} {unit}"
+            if ticket.variant == "attached":
+                return f"{count}s"
+            return f"{count}-{unit.rstrip('s')} forward"
         if ticket.capability == "date_written" and shifted:
-            return f"forward settling {_written_date(ticket.settlement)}"
-        return f"forward settling {ticket.settlement.isoformat()}"
+            if ticket.variant == "value_date":
+                return f"value {ticket.settlement.isoformat()}"
+            return f"{ticket.head} settling {_written_date(ticket.settlement)}"
+        return f"{ticket.head} settling {ticket.settlement.isoformat()}"
 
     head = (
-        f"{ticket.option_type.lower()} strike of {ticket.strike:.4f} "
+        f"{ticket.head}{ticket.option_type.lower()} strike of {ticket.strike:.4f} "
         f"expiring {ticket.expiry.isoformat()}"
     )
     if ticket.capability == "option_terms" and shifted:
+        if ticket.variant == "opt_strike_K":
+            return (
+                f"{ticket.head}{ticket.option_type.lower()} K {ticket.strike:.4f} "
+                f"expiring {ticket.expiry.isoformat()} "
+                f"premium of {ticket.premium:.0f} {ticket.premium_currency}"
+            )
         return f"{head} premium {ticket.premium_currency} {ticket.premium:,.0f}"
     return f"{head} premium of {ticket.premium:.0f} {ticket.premium_currency}"
 
@@ -354,16 +483,18 @@ def _sentence(ticket: Ticket, *, shifted: bool) -> str:
     else:
         direction = {"BUY": "Buy", "SELL": "Sell"}[ticket.direction]
 
-    if ticket.capability == "pair_code" and shifted:
+    if ticket.capability == "pair_nickname" and shifted:
+        pair = ticket.variant
+    elif ticket.capability == "pair_code" and shifted:
         pair = f"{ticket.pair[:3]}-{ticket.pair[3:]}"
     elif ticket.capability == "pair_words":
         base = CURRENCY_WORDS[ticket.pair[:3]]
         quote = CURRENCY_WORDS[ticket.pair[3:]]
-        pair = f"{base} {'versus' if shifted else 'against'} {quote}"
+        pair = f"{base} {ticket.variant if shifted else 'against'} {quote}"
     else:
         pair = ticket.pair
 
-    notional = _render_notional(ticket.notional, ticket.capability, shifted)
+    notional = _render_notional(ticket, shifted)
     instrument = _instrument_phrase(ticket, shifted)
     return f"{direction} {notional} {pair} {instrument} for {ticket.counterparty}"
 
@@ -396,6 +527,20 @@ def _golden(ticket: Ticket) -> dict:
             "exercise_style": None,
         },
     }
+
+
+def _item_variant(ticket: Ticket, split: str) -> str:
+    """A readable name for the exact wording an item uses.
+
+    The tag's shifted spelling on the shifted arm and ``familiar`` on the other,
+    suffixed with the instrument head when that is not the plain ``forward``, so
+    a result can be broken down by wording as well as by tag.
+    """
+    name = ticket.variant if split == "C" else "familiar"
+    head = (ticket.head or "").strip()
+    if head and head != "forward":
+        return f"{name} {head}"
+    return name
 
 
 # --------------------------------------------------------------------------- #
@@ -449,6 +594,7 @@ def _invalid_items() -> list[dict]:
                 "split": "D",
                 "capability": NO_VALID_TICKET,
                 "instrument_type": None,
+                "variant": None,
                 "pair_id": None,
                 "text": text,
                 "golden": None,
@@ -471,14 +617,18 @@ _READ_DIRECTION_SELL = re.compile(r"\bsell\b|\bshort\b")
 _READ_DIRECTION_BUY = re.compile(r"\bbuy\b|\blong\b")
 
 #: The notional always precedes the instrument phrase, so reading stops there and
-#: an option's reordered premium cannot be mistaken for a notional.
-_READ_INSTRUMENT_HEAD = re.compile(r"\b(?:call|put|forward|spot)\b", re.I)
+#: an option's reordered premium cannot be mistaken for a notional. A shifted
+#: forward may leave only ``value`` standing in for the whole instrument phrase.
+_READ_INSTRUMENT_HEAD = re.compile(
+    r"\b(?:call|put|forward|frd|fwd|spot|value)\b", re.I
+)
 
 _READ_PAIR_HYPHEN = re.compile(r"\b([A-Z]{3})-([A-Z]{3})\b")
+_READ_PAIR_NICKNAME = re.compile(r"\b(cable|aussie|kiwi)\b", re.I)
 _READ_PAIR_CODE = re.compile(r"\b([A-Z]{6})\b")
 _READ_PAIR_WORDS = re.compile(
     r"\b(" + "|".join(sorted(CURRENCY_WORDS.values(), key=len, reverse=True)) + r")"
-    r"\s+(?:against|versus)\s+"
+    r"\s+(?:against|versus|agst)\s+"
     r"(" + "|".join(sorted(CURRENCY_WORDS.values(), key=len, reverse=True)) + r")\b"
 )
 
@@ -489,22 +639,41 @@ _READ_NOTIONAL_GROUPED = re.compile(r"\b(\d{1,3}(?:,\d{3})+)\b")
 _READ_NOTIONAL_WORD = re.compile(
     r"\b(" + "|".join(_NUMBER_WORDS.values()) + r")\s+(?:million|mio)\b"
 )
+_READ_NOTIONAL_BILLION_WORD = re.compile(
+    r"\b(" + "|".join(_NUMBER_WORDS.values()) + r")\s+billion\b"
+)
 _READ_NOTIONAL_SUFFIX = re.compile(r"\b(\d[\d,]*(?:\.\d+)?)\s*(?:mm|m)\b")
+_READ_NOTIONAL_BILLION_SUFFIX = re.compile(
+    r"\b(\d[\d,]*)\s*(?:bn|bio|yards?)\b", re.I
+)
 
+#: ``K`` stands in for ``strike of`` on a shaded-out option line.
 _READ_OPTION = re.compile(
-    r"\b(call|put)\s+strike of\s+(\S+)\s+expiring\s+(\d{4}-\d{2}-\d{2})", re.I
+    r"\b(?:opt\s+)?(call|put)\s+(?:strike of\s+|K\s+)?(\S+)\s+"
+    r"expiring\s+(\d{4}-\d{2}-\d{2})",
+    re.I,
 )
 _READ_PREMIUM_STATED = re.compile(r"premium of\s+(\d[\d,]*(?:\.\d+)?)\s+([A-Z]{3})")
 _READ_PREMIUM_REORDERED = re.compile(r"premium\s+([A-Z]{3})\s+(\d[\d,]*(?:\.\d+)?)")
 
-_READ_SETTLEMENT_ISO = re.compile(r"forward\s+settling\s+(\d{4}-\d{2}-\d{2})", re.I)
-_READ_SETTLEMENT_WRITTEN = re.compile(
-    r"forward\s+settling\s+(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})", re.I
+_READ_SETTLEMENT_ISO = re.compile(
+    r"\b(?:forward|frd|fwd)\s+settling\s+(\d{4}-\d{2}-\d{2})", re.I
 )
-_READ_TENOR_PHRASE = re.compile(r"forward\s+in\s+(\d+)\s+(week|weeks|month|months)", re.I)
+_READ_SETTLEMENT_WRITTEN = re.compile(
+    r"\b(?:forward|frd|fwd)\s+settling\s+(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})", re.I
+)
+_READ_SETTLEMENT_VALUE = re.compile(r"\bvalue\s+(\d{4}-\d{2}-\d{2})", re.I)
+_READ_TENOR_PHRASE = re.compile(
+    r"\b(?:forward|frd|fwd)\s+in\s+(\d+)\s+(week|weeks|month|months)", re.I
+)
 _READ_TENOR_ADJECTIVE = re.compile(r"(\d+)-(week|month)\s+forward", re.I)
+#: A tenor count glued to an ``s`` means months. Read last, so it can only be a
+#: tenor when nothing else in the sentence states a settlement.
+_READ_TENOR_ATTACHED = re.compile(r"\b(\d+)s\b")
 
 _WORD_TO_CODE = {word: code for code, word in CURRENCY_WORDS.items()}
+_NICKNAME_TO_CODE = {nickname: code for code, nickname in _NICKNAMES.items()}
+_WORD_TO_NUMBER = {word: value for value, word in _NUMBER_WORDS.items()}
 _MONTH_TO_NUMBER = {name.lower(): index for index, name in enumerate(_MONTHS, start=1)}
 
 
@@ -520,6 +689,9 @@ def _read_pair(text: str) -> str:
     match = _READ_PAIR_HYPHEN.search(text)
     if match:
         return f"{match.group(1)}{match.group(2)}"
+    match = _READ_PAIR_NICKNAME.search(text)
+    if match:
+        return _NICKNAME_TO_CODE[match.group(1).lower()]
     match = _READ_PAIR_CODE.search(text)
     if match:
         return match.group(1)
@@ -530,18 +702,25 @@ def _read_pair(text: str) -> str:
 
 
 def _read_notional(text: str) -> float:
+    # A separated number is unambiguous, so the separators settle it first: an
+    # apostrophe or comma grouping can never be a suffix's multiplier.
     for pattern in (_READ_NOTIONAL_APOSTROPHE, _READ_NOTIONAL_GROUPED):
         match = pattern.search(text)
         if match:
             return float(match.group(1).replace("'", "").replace(",", ""))
-    match = _READ_NOTIONAL_WORD.search(text)
-    if match:
-        for value, word in _NUMBER_WORDS.items():
-            if word == match.group(1):
-                return float(value) * 1_000_000
+    for pattern, multiplier in (
+        (_READ_NOTIONAL_WORD, 1_000_000),
+        (_READ_NOTIONAL_BILLION_WORD, 1_000_000_000),
+    ):
+        match = pattern.search(text)
+        if match:
+            return float(_WORD_TO_NUMBER[match.group(1)]) * multiplier
     match = _READ_NOTIONAL_SUFFIX.search(text)
     if match:
         return float(match.group(1).replace(",", "")) * 1_000_000
+    match = _READ_NOTIONAL_BILLION_SUFFIX.search(text)
+    if match:
+        return float(match.group(1).replace(",", "")) * 1_000_000_000
     raise CorpusError(f"cannot read a notional from {text!r}")
 
 
@@ -566,6 +745,9 @@ def _read_forward_settlement(text: str) -> date | None:
             _MONTH_TO_NUMBER[match.group(2).lower()],
             int(match.group(1)),
         )
+    match = _READ_SETTLEMENT_VALUE.search(text)
+    if match:
+        return date.fromisoformat(match.group(1))
     match = _READ_TENOR_PHRASE.search(text)
     if match:
         return _tenor_date((int(match.group(1)), match.group(2).lower()))
@@ -573,6 +755,9 @@ def _read_forward_settlement(text: str) -> date | None:
     if match:
         unit = "weeks" if match.group(2).lower().startswith("week") else "months"
         return _tenor_date((int(match.group(1)), unit))
+    match = _READ_TENOR_ATTACHED.search(text)
+    if match:
+        return _tenor_date((int(match.group(1)), "months"))
     return None
 
 
@@ -667,6 +852,23 @@ def _check_assumptions(rates: dict[str, tuple[float, date]]) -> None:
             "CURRENCY_WORDS no longer covers the same currencies as Currency; a "
             "new currency needs its spoken name before the corpus can be built"
         )
+    if set(_SHIFTED_SPELLINGS) != set(CAPABILITIES):
+        raise CorpusError(
+            "every capability needs its shifted spellings declared in "
+            "_SHIFTED_SPELLINGS; a tag with no wording cannot be attributed"
+        )
+    unknown = set(_NICKNAMES) - set(PAIRS)
+    if unknown:
+        raise CorpusError(
+            f"the nickname table names {sorted(unknown)}, which CurrencyPair does "
+            "not define"
+        )
+    collisions = set(_NICKNAMES.values()) & set(CURRENCY_WORDS.values())
+    if collisions:
+        raise CorpusError(
+            f"{sorted(collisions)} name both a pair nickname and a spoken currency; "
+            "the pair reader could not tell them apart"
+        )
 
 
 def _payload(rates: dict[str, tuple[float, date]]) -> dict:
@@ -685,6 +887,7 @@ def _payload(rates: dict[str, tuple[float, date]]) -> dict:
                     "split": split,
                     "capability": ticket.capability,
                     "instrument_type": ticket.instrument_type,
+                    "variant": _item_variant(ticket, split),
                     # B[i] and C[i] are the same ticket, so they share this id.
                     "pair_id": f"P-{index:03d}" if split in ("B", "C") else None,
                     "text": _sentence(ticket, shifted=split == "C"),
@@ -694,7 +897,6 @@ def _payload(rates: dict[str, tuple[float, date]]) -> dict:
             )
     items.extend(_invalid_items())
     return {
-        "version": CORPUS_VERSION,
         "trade_date": TRADE_DATE.isoformat(),
         "counts": dict(SPLIT_SIZES),
         "capabilities": list(CAPABILITIES),
@@ -724,13 +926,30 @@ def build(snapshot: FrozenRateProvider | None = None) -> dict:
     return payload
 
 
+def dumps(payload: dict) -> str:
+    """The corpus file's text, with the cell table written one cell per line.
+
+    ``indent=2`` spreads a two-element cell over four lines, which buries the
+    table the whole design is organised around; every other value reads better
+    indented. Only the layout is affected -- the digest is computed over a
+    compact rendering of the same object, so it never moves with the layout.
+    """
+    lines: list[str] = []
+    for key, value in payload.items():
+        if key == "cells":
+            rows = [json.dumps(list(cell), ensure_ascii=False) for cell in value]
+            body = "[\n" + ",\n".join(f"    {row}" for row in rows) + "\n  ]"
+        else:
+            body = json.dumps(value, indent=2, ensure_ascii=False)
+            body = body.replace("\n", "\n  ")
+        lines.append(f"  {json.dumps(key, ensure_ascii=False)}: {body}")
+    return "{\n" + ",\n".join(lines) + "\n}\n"
+
+
 def write(path: Path | str | None = None, snapshot: FrozenRateProvider | None = None) -> Path:
     """Build the corpus and write it out. Returns the path written."""
     target = Path(path or DEFAULT_CORPUS_PATH)
-    payload = build(snapshot)
-    target.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
+    target.write_text(dumps(build(snapshot)), encoding="utf-8")
     return target
 
 

@@ -214,7 +214,6 @@ def test_the_header_identifies_the_instrument_the_model_and_the_code(run, payloa
     assert header["runner_version"] == runner.RUNNER_VERSION
     assert header["scorer_version"] == scoring.SCORER_VERSION
     assert header["corpus_sha256"] == payload["corpus_sha256"]
-    assert header["corpus_version"] == payload["version"]
     assert header["trade_date"] == corpus.TRADE_DATE.isoformat()
     assert header["model_id"] == "rule-based"
     assert header["model_kind"] == "baseline"

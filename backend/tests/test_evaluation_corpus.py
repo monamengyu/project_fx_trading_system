@@ -93,9 +93,17 @@ def test_committed_corpus_is_the_current_build(payload, snapshot):
     rebuilt = corpus.build(snapshot)
     assert rebuilt == payload
 
-    fresh = json.dumps(rebuilt, indent=2, ensure_ascii=False) + "\n"
+    fresh = corpus.dumps(rebuilt)
     on_disk = corpus.DEFAULT_CORPUS_PATH.read_text(encoding="utf-8")
     assert on_disk == fresh, "corpus.json is stale; run `python -m evaluation.corpus`"
+
+    # The layout is assembled by hand, so prove it reads back as the payload,
+    # and that a cell holds one line rather than the four an indented
+    # two-element list takes.
+    assert json.loads(fresh) == payload
+    block = fresh.partition('"cells": [')[2].partition("\n  ],")[0]
+    rows = [row.strip().removesuffix(",") for row in block.strip().splitlines()]
+    assert rows == [json.dumps(cell) for cell in rebuilt["cells"]]
 
 
 def test_rebuild_is_deterministic(snapshot):
@@ -117,7 +125,7 @@ def test_digest_covers_every_field(payload):
         "pair_id": lambda p: p["items"][120].__setitem__("pair_id", "P-999"),
         "reason": lambda p: p["items"][-1].__setitem__("reason", "missing_pair"),
         "split": lambda p: p["items"][0].__setitem__("split", "B"),
-        "version": lambda p: p.__setitem__("version", 2),
+        "variant": lambda p: p["items"][200].__setitem__("variant", "nonsense"),
         "trade_date": lambda p: p.__setitem__("trade_date", "2026-09-12"),
         "counts": lambda p: p["counts"].__setitem__("A", 121),
         "cells": lambda p: p["cells"][0].__setitem__(0, "pair_code"),
@@ -154,7 +162,6 @@ def test_a_hand_edited_file_is_rejected(payload, tmp_path):
 
 def test_split_sizes_and_item_ids_are_exact(payload):
     assert payload["counts"] == {"A": 120, "B": 80, "C": 80, "D": 40}
-    assert payload["version"] == corpus.CORPUS_VERSION
 
     expected = [
         f"{split}-{index:03d}"
@@ -181,9 +188,9 @@ def test_pools_match_the_enums(snapshot):
 
 
 def test_cells_and_tags_cover_the_design(payload):
-    assert len(corpus.CELLS) == 21
-    assert len(set(corpus.CELLS)) == 21
-    assert len(corpus.CAPABILITIES) == 9
+    assert len(corpus.CELLS) == 27
+    assert len(set(corpus.CELLS)) == 27
+    assert len(corpus.CAPABILITIES) == 11
     assert set(corpus.CAPABILITIES) == {capability for capability, _ in corpus.CELLS}
     assert [capability for capability, _ in corpus.CELLS[:3]] == [
         "tenor_form",
@@ -203,7 +210,7 @@ def test_cells_and_tags_cover_the_design(payload):
     for cell in corpus.CELLS:
         assert used[cell] > 0, f"{cell} is designed but never used"
 
-    # Round-robin over 21 cells leaves every cell within one instance of the
+    # Round-robin over 27 cells leaves every cell within one instance of the
     # others, so no capability is measured on a handful of items.
     per_split = {
         split: Counter(
@@ -245,9 +252,47 @@ def test_only_valid_items_carry_a_golden(payload):
         if item["split"] == "D":
             assert item["golden"] is None
             assert item["reason"] in corpus._D_KIND_NAMES
+            assert item["variant"] is None
         else:
             assert item["golden"] is not None
             assert item["reason"] is None
+            assert item["variant"], item["item_id"]
+
+
+def test_familiar_items_use_familiar_spellings(payload):
+    """The arms that must be answerable say only what the rules already read.
+
+    ``variant`` is the record of which spelling an item was rendered with, so the
+    familiar arms saying ``familiar`` is what makes them a floor rather than a
+    second shifted arm.
+    """
+    for split in FAMILIAR:
+        for item in corpus.items_of(payload, split):
+            assert item["variant"].split()[0] == "familiar", item["item_id"]
+
+
+def test_every_shifted_spelling_is_exercised(payload):
+    """A spelling no item uses is a claim the corpus does not actually test.
+
+    Each shifted item carries the ``variant`` it was rendered with, so this checks
+    the rotation really happens: a tag with more spellings than its cell has items
+    leaves the surplus declared but never measured.
+    """
+    assert set(corpus._SHIFTED_SPELLINGS) == set(corpus.CAPABILITIES), (
+        "a tag declares no shifted spellings, or a spelling has no tag"
+    )
+    for capability, spellings in corpus._SHIFTED_SPELLINGS.items():
+        assert len(set(spellings)) == len(spellings), f"{capability} repeats itself"
+
+    shifted = corpus.items_of(payload, "C")
+    for capability, spellings in corpus._SHIFTED_SPELLINGS.items():
+        used = {
+            item["variant"].split()[0]
+            for item in shifted
+            if item["capability"] == capability
+        }
+        missing = set(spellings) - used
+        assert not missing, f"{capability} declares unused spellings: {sorted(missing)}"
 
 
 def test_invalid_items_cover_every_kind_equally(payload):

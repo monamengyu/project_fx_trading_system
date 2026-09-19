@@ -207,7 +207,6 @@ def _header(
         "model_id": info.id,
         "model_kind": info.kind,
         "provider_model": info.model,
-        "corpus_version": payload["version"],
         "corpus_sha256": payload["corpus_sha256"],
         "trade_date": payload["trade_date"],
         "system_prompt_sha256": sha256(

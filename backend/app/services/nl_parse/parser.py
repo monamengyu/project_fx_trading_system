@@ -191,15 +191,13 @@ async def parse_trade(
     client = get_client(info)
 
     messages = build_messages(text)
-    system = messages[0]["content"]
-    user = text
     last_error: Exception | None = None
     usage: dict | None = None
     served_model: str | None = None
 
     for attempt in range(2):
         try:
-            completion = await client.complete_json(system, user)
+            completion = await client.complete_json(messages)
             usage = _accumulate_usage(usage, completion.usage)
             served_model = completion.model or served_model
             draft = NLTradeDraft.model_validate(completion.content)
@@ -216,10 +214,17 @@ async def parse_trade(
         except (ValidationError, json.JSONDecodeError, ValueError) as exc:
             last_error = exc
             if attempt == 0 and info.kind != "baseline":
-                user = (
-                    f"{text}\n\nYour previous output was invalid ({exc}).\n"
-                    "Return ONLY valid JSON matching the schema."
-                )
+                # The worked examples are kept; only the final turn changes.
+                messages = [
+                    *messages[:-1],
+                    {
+                        "role": "user",
+                        "content": (
+                            f"{text}\n\nYour previous output was invalid ({exc}).\n"
+                            "Return ONLY valid JSON matching the schema."
+                        ),
+                    },
+                ]
                 continue
             break
 

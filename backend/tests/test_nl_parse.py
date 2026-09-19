@@ -320,7 +320,7 @@ async def test_parse_trade_propagates_usage_from_model():
     from app.services.nl_parse.clients import Completion
 
     class FakeClient:
-        async def complete_json(self, system, user):
+        async def complete_json(self, messages):
             return Completion(
                 content=_VALID_SPOT_CONTENT,
                 usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
@@ -337,7 +337,7 @@ async def test_parse_trade_accumulates_usage_across_retry():
     calls = {"n": 0}
 
     class FakeClient:
-        async def complete_json(self, system, user):
+        async def complete_json(self, messages):
             calls["n"] += 1
             if calls["n"] == 1:
                 # Invalid content triggers the retry; it still consumed tokens.
@@ -355,7 +355,7 @@ async def test_parse_trade_reports_defaults_from_the_resolver():
     from app.services.nl_parse.clients import Completion
 
     class FakeClient:
-        async def complete_json(self, system, user):
+        async def complete_json(self, messages):
             return Completion(content=_VALID_SPOT_CONTENT, usage={})
 
     with override_trade_date(PINNED_DAY):
@@ -374,7 +374,7 @@ async def test_parse_trade_uses_the_injected_rate_provider():
     used = []
 
     class FakeClient:
-        async def complete_json(self, system, user):
+        async def complete_json(self, messages):
             return Completion(content=content, usage={})
 
     async def provider(pair):
@@ -389,6 +389,126 @@ async def test_parse_trade_uses_the_injected_rate_provider():
 
     assert used == [CurrencyPair.EURUSD]
     assert result.trade.instrument_details.rate == 1.4321
+
+
+async def test_parse_trade_sends_the_worked_examples():
+    from app.services.nl_parse.clients import Completion
+    from app.services.nl_parse.prompts import build_messages
+
+    seen = []
+
+    class FakeClient:
+        async def complete_json(self, messages):
+            seen.append(messages)
+            return Completion(content=_VALID_SPOT_CONTENT, usage={})
+
+    with patch("app.services.nl_parse.parser.get_client", return_value=FakeClient()):
+        await parse_trade("Buy EURUSD spot", model_id="llama3.2:3b")
+
+    assert seen == [build_messages("Buy EURUSD spot")]
+    assert [m["role"] for m in seen[0]] == [
+        "system",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+    ]
+    assert seen[0][-1] == {"role": "user", "content": "Buy EURUSD spot"}
+
+
+async def test_retry_corrects_only_the_final_turn_and_keeps_the_examples():
+    from app.services.nl_parse.clients import Completion
+
+    seen = []
+
+    class FakeClient:
+        async def complete_json(self, messages):
+            seen.append(messages)
+            if len(seen) == 1:
+                return Completion(content={"bogus": True}, usage={})
+            return Completion(content=_VALID_SPOT_CONTENT, usage={})
+
+    with patch("app.services.nl_parse.parser.get_client", return_value=FakeClient()):
+        await parse_trade("Buy EURUSD spot", model_id="llama3.2:3b")
+
+    assert len(seen) == 2
+    assert seen[1][:-1] == seen[0][:-1]
+    assert seen[1][-1]["content"].startswith("Buy EURUSD spot")
+    assert "Your previous output was invalid" in seen[1][-1]["content"]
+
+
+async def test_baseline_client_reads_the_final_user_turn():
+    from app.services.nl_parse.clients import BaselineClient
+    from app.services.nl_parse.prompts import build_messages
+
+    messages = build_messages("Buy 5 million norwegian kroner for usd spot at 10.2")
+    # The first user turn is a worked example, not the text to be parsed.
+    assert messages[1]["content"] != messages[-1]["content"]
+
+    with override_trade_date(PINNED_DAY):
+        completion = await BaselineClient().complete_json(messages)
+
+    assert completion.content["currency_pair"] == "USDNOK"
+    assert completion.content["instrument"]["settlement_date"] == PINNED_SPOT.isoformat()
+
+
+async def test_baseline_client_rejects_a_conversation_without_a_user_turn():
+    from app.services.nl_parse.clients import BaselineClient
+
+    with pytest.raises(ValueError):
+        await BaselineClient().complete_json([{"role": "system", "content": "nothing to parse"}])
+
+
+@pytest.mark.parametrize("kind", ["openai-compatible", "openrouter"])
+async def test_chat_request_carries_the_whole_conversation(monkeypatch, kind):
+    from app.services.nl_parse import clients as clients_module
+    from app.services.nl_parse.prompts import build_messages
+
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "choices": [{"message": {"content": '{"instrument_type": "SPOT"}'}}],
+                "usage": {"total_tokens": 3},
+                "model": "served-model",
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+        async def post(self, url, json=None, headers=None):
+            captured["payload"] = json
+            return FakeResponse()
+
+    monkeypatch.setattr(clients_module.httpx, "AsyncClient", FakeAsyncClient)
+    if kind == "openrouter":
+        client = clients_module.OpenRouterClient("test-key", "openai/gpt-5.6-luna")
+    else:
+        client = clients_module.OpenAICompatClient(
+            "http://localhost:11434/v1", None, "llama3.2:3b"
+        )
+
+    messages = build_messages("Buy EURUSD spot")
+    completion = await client.complete_json(messages)
+
+    assert captured["payload"]["messages"] == messages
+    assert len(captured["payload"]["messages"]) == 8
+    assert completion.content == {"instrument_type": "SPOT"}
+    assert completion.model == "served-model"
 
 
 def test_system_prompt_honours_the_pin():
@@ -435,7 +555,7 @@ async def test_missing_frozen_rate_is_not_reported_as_a_parse_failure():
     content["instrument"] = {"instrument_type": "SPOT", "rate": None}
 
     class FakeClient:
-        async def complete_json(self, system, user):
+        async def complete_json(self, messages):
             return Completion(content=content, usage={})
 
     with override_trade_date(PINNED_DAY):

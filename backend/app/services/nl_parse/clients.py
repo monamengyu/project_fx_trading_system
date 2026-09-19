@@ -1,11 +1,13 @@
 """Provider adapters for NL trade parsing.
 
-Every client exposes ``async complete_json(system, user) -> Completion`` where
-``Completion.content`` is the parsed JSON and ``Completion.usage`` carries the
-provider's token usage (``None`` for the rule-based baseline). Hosted LLM
-models go through a single OpenRouter gateway (OpenAI-compatible
-``/chat/completions`` protocol); Ollama shares that protocol locally. The
-baseline client wraps the deterministic rule-based parser.
+Every client exposes ``async complete_json(messages) -> Completion`` where
+``messages`` is the whole conversation -- the system turn, including any worked
+examples, and the text to parse -- and ``Completion.content`` is the parsed
+JSON. ``Completion.usage`` carries the provider's token usage (``None`` for the
+rule-based baseline). Hosted LLM models go through a single OpenRouter gateway
+(OpenAI-compatible ``/chat/completions`` protocol); Ollama shares that protocol
+locally. The baseline client wraps the deterministic rule-based parser, which
+reads only the final user turn.
 """
 
 import asyncio
@@ -58,15 +60,23 @@ def _strip_code_fences(text: str) -> str:
     return text
 
 
+def _last_user(messages: list[dict]) -> str:
+    """The text to parse: the final user turn of a conversation."""
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            return message["content"]
+    raise ValueError("conversation has no user turn")
+
+
 class BaselineClient:
     """Deterministic rule-based parser (no network)."""
 
     kind = "baseline"
 
-    async def complete_json(self, system: str, user: str) -> Completion:
+    async def complete_json(self, messages: list[dict]) -> Completion:
         from app.services.nl_parse.baseline import parse_rule_based
 
-        return Completion(content=parse_rule_based(user))
+        return Completion(content=parse_rule_based(_last_user(messages)))
 
 
 class OpenAICompatClient:
@@ -79,16 +89,13 @@ class OpenAICompatClient:
         self.api_key = api_key
         self.model = model
 
-    async def complete_json(self, system: str, user: str) -> Completion:
+    async def complete_json(self, messages: list[dict]) -> Completion:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         payload = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            "messages": messages,
             "response_format": {"type": "json_object"},
             "temperature": 0,
         }
@@ -136,7 +143,7 @@ class OpenRouterClient:
         self.api_key = api_key
         self.model = model
 
-    async def complete_json(self, system: str, user: str) -> Completion:
+    async def complete_json(self, messages: list[dict]) -> Completion:
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
@@ -145,10 +152,7 @@ class OpenRouterClient:
         }
         payload = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            "messages": messages,
             "response_format": {"type": "json_object"},
             "temperature": 0,
         }

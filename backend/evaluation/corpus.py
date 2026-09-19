@@ -17,9 +17,9 @@ same parser the same question:
 ===========  ===  ==================================================================
 split        n    role
 ===========  ===  ==================================================================
-``A``        120  familiar wording, one template family per item
-``B``         80  familiar wording, different tickets
-``C``         80  shifted wording, each item twinned to a ``B`` item
+``A``        108  familiar wording, one template family per item
+``B``        108  familiar wording, different tickets
+``C``        108  shifted wording, each item twinned to a ``B`` item
 ``D``         40  no valid ticket exists; the correct answer is a refusal
 ===========  ===  ==================================================================
 
@@ -27,6 +27,11 @@ split        n    role
 one ticket, said two ways. ``A`` and ``B`` draw from the same familiar pool but
 never share a ticket, so the pair of them can be pooled or used one as a
 held-out reference for the other.
+
+Each split walks the cell table cell by cell and takes ``REPLICATES`` tickets
+from each, so the sizes are a consequence of the table rather than a separate
+choice: enlarging the table adds items to the end of every split and leaves the
+ones already there untouched.
 
 Every item carries one ``capability`` tag naming the single skill its shifted arm
 exercises, so a failure is attributable to that skill rather than to "the
@@ -97,8 +102,6 @@ TRADE_DATE = date(2026, 9, 11)
 SPOT = "SPOT"
 FORWARD = "FORWARD"
 OPTION = "OPTION"
-
-SPLIT_SIZES = {"A": 120, "B": 80, "C": 80, "D": 40}
 
 #: Every supported pair, in ``CurrencyPair`` order. Checked against the frozen
 #: snapshot at build time so a change to either side is a loud failure.
@@ -255,6 +258,26 @@ CELLS: list[tuple[str, str]] = list(_INSTRUMENT_CAPABILITIES) + [
     for capability in _SHARED_CAPABILITIES
     for instrument in (SPOT, FORWARD, OPTION)
 ]
+
+#: How many tickets each cell contributes to a split. The split sizes follow
+#: from this and :data:`CELLS` rather than being fixed, so extending the cell
+#: table appends items at the end of each split and leaves every item already in
+#: it on the same cell with the same text, id and label. A recorded run can then
+#: be extended with the new items instead of being re-taken whole.
+REPLICATES: dict[str, int] = {"A": 4, "B": 4, "C": 4}
+
+#: ``D`` is a fixed list of unrescuable sentences rather than a walk of the cell
+#: table, so it is the one size that does not follow from ``REPLICATES``.
+_D_SIZE = 40
+
+
+def _sizes_for(cell_count: int) -> dict[str, int]:
+    """The split sizes a cell table of ``cell_count`` rows produces."""
+    sizes = {split: count * cell_count for split, count in REPLICATES.items()}
+    return {**sizes, "D": _D_SIZE}
+
+
+SPLIT_SIZES: dict[str, int] = _sizes_for(len(CELLS))
 
 #: Day offsets from :data:`TRADE_DATE` for a forward whose settlement is written
 #: out rather than given as a tenor. Both land on a business day after spot.
@@ -879,8 +902,11 @@ def _payload(rates: dict[str, tuple[float, date]]) -> dict:
         if split == "D":
             continue
         for index in range(count):
-            cell_index = index % len(CELLS)
-            ticket = _ticket(cell_index, index // len(CELLS), split, spot_rates)
+            # Cell-major: item ``index`` sits in cell ``index // replicates``.
+            # Taking the cell this way rather than modulo the table length is
+            # what keeps existing items in place when the table grows.
+            cell_index, k = divmod(index, REPLICATES[split])
+            ticket = _ticket(cell_index, k, split, spot_rates)
             items.append(
                 {
                     "item_id": f"{split}-{index:03d}",

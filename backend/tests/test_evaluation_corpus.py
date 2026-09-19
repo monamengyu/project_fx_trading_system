@@ -161,7 +161,7 @@ def test_a_hand_edited_file_is_rejected(payload, tmp_path):
 
 
 def test_split_sizes_and_item_ids_are_exact(payload):
-    assert payload["counts"] == {"A": 120, "B": 80, "C": 80, "D": 40}
+    assert payload["counts"] == {"A": 108, "B": 108, "C": 108, "D": 40}
 
     expected = [
         f"{split}-{index:03d}"
@@ -169,6 +169,28 @@ def test_split_sizes_and_item_ids_are_exact(payload):
         for index in range(count)
     ]
     assert [item["item_id"] for item in payload["items"]] == expected
+
+
+def test_a_new_cell_appends_items_without_moving_the_old_ones(monkeypatch, snapshot):
+    """Enlarging the cell table adds items; it does not re-draw the corpus.
+
+    Because the sizes follow from the table, one more cell lengthens every split.
+    The items already there have to keep their cell, their text and their id, or
+    an unrelated addition would silently invalidate a recorded run.
+    """
+    before = corpus.build(snapshot)
+    grown = [*corpus.CELLS, corpus.CELLS[0]]
+    monkeypatch.setattr(corpus, "CELLS", grown)
+    monkeypatch.setattr(corpus, "SPLIT_SIZES", corpus._sizes_for(len(grown)))
+    after = corpus.build(snapshot)
+
+    for split in corpus.REPLICATES:
+        kept = corpus.items_of(before, split)
+        assert after["counts"][split] == len(kept) + corpus.REPLICATES[split]
+        assert corpus.items_of(after, split)[: len(kept)] == kept, (
+            f"the {split} items moved when the table grew"
+        )
+    assert corpus.items_of(after, "D") == corpus.items_of(before, "D")
 
 
 def test_trade_date_matches_the_snapshot(payload, snapshot):
@@ -306,8 +328,8 @@ def test_familiar_and_shifted_pools_share_no_ticket(payload):
 
     ``A`` and ``C`` have to be disjoint tickets, otherwise the familiar arm
     contains the shifted arm's answer and the comparison is meaningless. ``B``
-    and ``C`` are deliberately the same 80 tickets said two ways, so for them the
-    overlap must be exactly the pairs, item by item.
+    and ``C`` are deliberately the same 108 tickets said two ways, so for them
+    the overlap must be exactly the pairs, item by item.
     """
     a = {_key(item["golden"]): item["item_id"] for item in corpus.items_of(payload, "A")}
     b = {_key(item["golden"]): item["item_id"] for item in corpus.items_of(payload, "B")}

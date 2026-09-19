@@ -25,10 +25,15 @@ class Completion:
     ``usage`` mirrors the provider's ``usage`` object (e.g. ``prompt_tokens``,
     ``completion_tokens``, ``total_tokens``) and is ``None`` when the provider
     does not report tokens (the rule-based baseline).
+
+    ``model`` is the model the provider says answered, which can differ from the
+    one requested when a gateway routes to a dated snapshot. It is recorded so a
+    measured result stays attributable to the model that produced it.
     """
 
     content: dict
     usage: dict | None = None
+    model: str | None = None
 
 
 def _provider_error(exc: httpx.HTTPStatusError) -> str:
@@ -101,7 +106,11 @@ class OpenAICompatClient:
                     response.raise_for_status()
                 data = response.json()
                 content = data["choices"][0]["message"]["content"]
-                return Completion(content=json.loads(content), usage=data.get("usage"))
+                return Completion(
+                    content=json.loads(content),
+                    usage=data.get("usage"),
+                    model=data.get("model"),
+                )
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 503 and attempt < 2:
                     last_exc = exc
@@ -160,7 +169,9 @@ class OpenRouterClient:
         data = response.json()
         content = data["choices"][0]["message"]["content"]
         return Completion(
-            content=json.loads(_strip_code_fences(content)), usage=data.get("usage")
+            content=json.loads(_strip_code_fences(content)),
+            usage=data.get("usage"),
+            model=data.get("model"),
         )
 
 

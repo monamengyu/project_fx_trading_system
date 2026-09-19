@@ -403,7 +403,7 @@ def _golden(ticket: Ticket) -> dict:
 # --------------------------------------------------------------------------- #
 
 #: One kind per way of being unsalvageable. Only the ``d`` split uses these, and
-#: each kind is refused at a different layer, so the set also documents where a
+#: each kind is refused at a different stage, so the set also documents where a
 #: refusal can happen: pair and direction and notional are rule-based failures,
 #: ``nonpositive_notional`` fails draft validation and
 #: ``past_settlement_forward`` fails the settlement-window check.

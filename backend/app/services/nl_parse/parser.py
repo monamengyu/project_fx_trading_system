@@ -42,6 +42,10 @@ class ParseResult:
     # Names of the fields the resolver invented because the draft left them
     # unspecified; empty means the model stated everything it was asked for.
     defaulted_fields: list[str] = field(default_factory=list)
+    # The model the provider reported answering, when it reports one; ``None``
+    # for the rule-based baseline. A gateway may route to a dated snapshot, so
+    # this is what a run has to be attributed to.
+    served_model: str | None = None
 
 
 @dataclass
@@ -191,11 +195,13 @@ async def parse_trade(
     user = text
     last_error: Exception | None = None
     usage: dict | None = None
+    served_model: str | None = None
 
     for attempt in range(2):
         try:
             completion = await client.complete_json(system, user)
             usage = _accumulate_usage(usage, completion.usage)
+            served_model = completion.model or served_model
             draft = NLTradeDraft.model_validate(completion.content)
             resolved = await resolve_draft(draft, rate_provider=rate_provider)
             return ParseResult(
@@ -205,6 +211,7 @@ async def parse_trade(
                 raw=completion.content,
                 usage=usage,
                 defaulted_fields=resolved.defaulted_fields,
+                served_model=served_model,
             )
         except (ValidationError, json.JSONDecodeError, ValueError) as exc:
             last_error = exc

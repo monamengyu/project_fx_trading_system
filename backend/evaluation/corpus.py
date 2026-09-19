@@ -1,76 +1,43 @@
 """The corpus: natural-language tickets with known answers.
 
-Ground truth first
-------------------
-A *ticket* (pair, direction, notional, counterparty and the instrument's own
-parameters) is chosen deterministically, and the text is then rendered from a
-template. Text is therefore a lossless encoding of the ticket, and
-:func:`read_ticket` reconstructs the ticket from the text alone. That round-trip
-is the corpus's main self-check: a sentence that cannot be read back into the
-ticket it claims to describe is a mislabelled item.
-
-Four splits, four test conditions
----------------------------------
-``A``/``B``/``C``/``D`` are four ways of asking the
-same parser the same question:
+Text is rendered from a deterministically chosen ticket, so every sentence is a
+lossless encoding of its golden and :func:`read_ticket` can reconstruct it. That
+round-trip is the self-check: a sentence that cannot be read back into the ticket
+it describes is a mislabelled item.
 
 ===========  ===  ==================================================================
 split        n    role
 ===========  ===  ==================================================================
-``A``        108  familiar wording, one template family per item
+``A``        108  familiar wording
 ``B``        108  familiar wording, different tickets
 ``C``        108  shifted wording, each item twinned to a ``B`` item
 ``D``         40  no valid ticket exists; the correct answer is a refusal
 ===========  ===  ==================================================================
 
 ``B[i]`` and ``C[i]`` share a ``pair_id`` and carry a byte-identical ``golden``:
-one ticket, said two ways. ``A`` and ``B`` draw from the same familiar pool but
-never share a ticket, so the pair of them can be pooled or used one as a
+one ticket said two ways. ``A`` and ``B`` share no ticket, so one can serve as a
 held-out reference for the other.
 
-Each split walks the cell table cell by cell and takes ``REPLICATES`` tickets
-from each, so the sizes are a consequence of the table rather than a separate
-choice: enlarging the table adds items to the end of every split and leaves the
-ones already there untouched.
-
-Every item carries one ``capability`` tag naming the single skill its shifted arm
-exercises, so a failure is attributable to that skill rather than to "the
-sentence was hard". A tag with more than one shifted spelling rotates through
-them by item, and the exact spelling an item used is recorded in its ``variant``
-field, so a result can be read per wording and not only per tag.
-
-Desk shorthand
---------------
-Tickets are quoted in shorthand on a dealing desk, and a parser that only reads
-the long form is of little use. Both arms therefore use real shorthand:
-
-* ``m``/``mm`` and ``million``/``mio``; and ``billion``, ``bn``, ``bio``,
-  ``yard`` and ``yards`` for a thousand million;
-* ``forward``, ``frd`` and ``fwd``, and a bare ``opt`` in front of a call or put;
-* ``settling <date>``, ``value <date>``, ``forward in 3 months``, ``3-month
-  forward`` and ``3s`` (three months);
-* ``against``, ``versus`` and ``agst``; ``strike of`` and a leading ``K``;
-* the dealers' names for three pairs: ``cable`` (GBPUSD), ``aussie`` (AUDUSD) and
-  ``kiwi`` (NZDUSD).
+Each item carries one ``capability`` tag naming the single skill its shifted arm
+exercises, and a ``variant`` naming the spelling it used, so a failure is
+attributable to a wording rather than to a hard sentence.
 
 A tag's *familiar* arm uses a spelling the production rule-based parser already
-handles, which is what keeps the baseline the floor; its *shifted* arm uses one
-that parser cannot read, and that is what the tag measures. ``variant`` names
-which spelling an item actually used.
+reads, which keeps the baseline the floor; its *shifted* arm uses one that parser
+cannot read. Both arms use real desk shorthand:
 
-Scope limits (deliberate, so a failure is never miscounted)
-----------------------------------------------------------
-* ``rate`` is never stated in any ticket. The resolver fills it from the frozen
-  snapshot, which is market data, not parsing. Rate *reading* is therefore
-  untested here.
-* ``comment`` and ``exercise_style`` are never stated. They exercise the
-  resolver's defaulting (and hence the confidence signal), not the parser.
-* ``delivery_date`` and ``premium_date`` are never stated; the resolver derives
-  them from the expiry.
-* SPOT tickets never state a settlement date, because a spot date is a convention
-  the resolver computes rather than a value the text carries.
+* ``m``/``mm``/``million``/``mio``, and ``billion``/``bn``/``bio``/``yard``/``yards``;
+* ``forward``/``frd``/``fwd``, and a bare ``opt``;
+* ``settling <date>``/``value <date>``/``3-month forward``/``3s``;
+* ``against``/``versus``/``agst``, and ``strike of``/``K``;
+* the desk names ``cable`` (GBPUSD), ``aussie`` (AUDUSD) and ``kiwi`` (NZDUSD).
 
-Regenerate the file after any change here::
+Deliberately never stated, so a failure is never miscounted: ``rate`` (market
+data, not parsing), ``comment`` and ``exercise_style`` (resolver defaults, hence
+the confidence signal), the option's ``delivery_date`` and ``premium_date`` (the
+resolver derives them), and a SPOT settlement date (a resolver convention).
+
+Regenerate after any change here::
 
     cd backend
     python -m evaluation.corpus
@@ -94,9 +61,8 @@ from evaluation.frozen_rates import FrozenRateProvider
 
 DEFAULT_CORPUS_PATH = Path(__file__).with_name("corpus.json")
 
-#: The single pinned trade date the whole corpus is built on. Every tenor, option
-#: expiry and settlement date below is relative to it, and the frozen snapshot
-#: must have been recorded on it (asserted in :func:`build`).
+#: The single pinned trade date. Every tenor, expiry and settlement date is
+#: relative to it, and the frozen snapshot must have been recorded on it.
 TRADE_DATE = date(2026, 9, 11)
 
 SPOT = "SPOT"
@@ -104,28 +70,23 @@ FORWARD = "FORWARD"
 OPTION = "OPTION"
 
 #: Every supported pair, in ``CurrencyPair`` order. Checked against the frozen
-#: snapshot at build time so a change to either side is a loud failure.
+#: snapshot at build time, so a change to either side is a loud failure.
 PAIRS: list[str] = [pair.value for pair in CurrencyPair]
 
-#: Notionals in whole millions. Rendered in whichever spelling the item's
-#: capability tests, so the pool is about magnitude, not formatting.
+#: Notionals in whole millions; the item's capability decides how each is spelt.
 NOTIONALS: list[float] = [float(millions) * 1_000_000 for millions in range(1, 11)]
 
 COUNTERPARTIES = ["BANK_A", "BANK_B", "BANK_C"]
 
-#: Tenors with more than one spelling. Calendar days for weeks, calendar months
-#: clamped to day 28 for months - both matching the rule-based parser's own
-#: arithmetic, so a familiar tenor arm is exactly reproducible.
-#:
-#: ``(1, "month")`` is deliberately absent: one month from the trade date still
-#: lands on the parser's silent default forward settlement, so a shifted
-#: ``1-month forward`` would be accidentally correct and the arm undetectable.
+#: Tenors with more than one spelling, using the rule-based parser's own
+#: arithmetic so a familiar arm reproduces exactly. ``(1, "month")`` is absent
+#: because it coincides with the parser's default forward settlement, which would
+#: make a shifted ``1-month forward`` accidentally correct and the arm undetectable.
 TENORS: list[tuple[int, str]] = [(1, "week"), (2, "weeks"), (3, "months"), (6, "months")]
 
-#: The one spoken name used for each currency when a ticket is rendered in words.
-#: Each value must be an exact alternative of the parser's own ``_CURRENCY_WORDS``
-#: table. USD is bare ``dollars``: the parser's spoken form needs the quote word
-#: immediately after the connector, and no USD alternative starts with "US".
+#: The spoken name each currency is rendered as, matching the parser's own
+#: ``_CURRENCY_WORDS``. USD is bare ``dollars`` because the parser needs the quote
+#: word straight after the connector and no USD alternative starts with "US".
 CURRENCY_WORDS: dict[str, str] = {
     "EUR": "euros",
     "GBP": "pounds",
@@ -145,9 +106,8 @@ CURRENCY_WORDS: dict[str, str] = {
     "TRY": "turkish lira",
 }
 
-#: The pairs the market calls by a nickname instead of a code. Colloquial pair
-#: names are world knowledge rather than tokenisation, so they get a tag of their
-#: own rather than joining ``pair_code``.
+#: The pairs the market calls by a nickname. Pair nicknames are world knowledge
+#: rather than tokenisation, so they get a tag of their own.
 _NICKNAMES: dict[str, str] = {
     "GBPUSD": "cable",
     "AUDUSD": "aussie",
@@ -157,10 +117,9 @@ _NICKNAMES: dict[str, str] = {
 #: The nickname pairs, in a fixed order so an item's pair is reproducible.
 _NICKNAME_PAIRS: list[str] = list(_NICKNAMES)
 
-#: Ways of writing a thousand million. The rule-based parser has no multiplier
-#: above a million, so every one of these is a spelling it cannot read. The list
-#: is kept at five because a single cell only holds three to five items: any
-#: longer list would leave spellings declared but never actually exercised.
+#: Ways of writing a thousand million, none of which the parser reads. Capped at
+#: five because a cell holds only ``REPLICATES`` items: a longer list would declare
+#: spellings that are never exercised.
 _BILLION_SPELLINGS: dict[str, str] = {
     "billion": "{word} billion",
     "bn": "{n}bn",
@@ -209,8 +168,8 @@ _SHARED_CAPABILITIES = (
     "direction_verb", # the direction as a verb, e.g. ``buy`` or ``sell``
 )
 
-#: Tags that only exist for one instrument type. Listed first so their cells are
-#: spread over the whole of every split instead of clustering at the end.
+#: Tags that only exist for one instrument type. Listed first so their cells
+#: spread across every split instead of clustering at the end.
 _INSTRUMENT_CAPABILITIES: list[tuple[str, str]] = [
     ("tenor_form", FORWARD), # the forward's tenor is stated, e.g. ``3-month forward``
     ("date_written", FORWARD), # the forward's settlement is written out, e.g. ``forward settling 2026-10-20``
@@ -222,17 +181,17 @@ CAPABILITIES: list[str] = [
     capability for capability, _ in _INSTRUMENT_CAPABILITIES
 ] + list(_SHARED_CAPABILITIES)
 
-#: Forward heads the rule-based parser already reads, so a forward can vary its
-#: wording while staying familiar.
+#: Heads the parser already reads, so a forward can vary its wording while staying
+#: familiar.
 _FORWARD_HEADS: tuple[str, ...] = ("forward", "frd", "fwd")
 
-#: Option heads. A bare ``opt`` is a word the rule-based parser simply skips over,
-#: so it too is familiar. The empty head repeats so two items in three stay plain.
+#: Option heads. The parser skips over a bare ``opt``, so it too is familiar; the
+#: empty head repeats so two items in three stay plain.
 _OPTION_HEADS: tuple[str, ...] = ("", "", "opt ")
 
-#: Every spelling a tag's shifted arm rotates through, keyed by tag. A tag with
-#: ``n`` spellings uses the item's cell position modulo ``n``; whichever it lands
-#: on is recorded on the item as its ``variant``.
+#: The spellings a tag's shifted arm rotates through, in rotation order. A tag with
+#: ``n`` spellings uses position modulo ``n``, and whichever it lands on becomes
+#: the item's ``variant``.
 _SHIFTED_SPELLINGS: dict[str, tuple[str, ...]] = {
     "tenor_form": ("hyphenated", "attached"),
     "date_written": ("written_date", "value_date"),
@@ -250,24 +209,22 @@ _SHIFTED_SPELLINGS: dict[str, tuple[str, ...]] = {
 #: The tag for an item whose whole point is that no valid ticket exists.
 NO_VALID_TICKET = "no_valid_ticket"
 
-#: One ``(capability, instrument_type)`` cell per row. Each split walks this table
-#: from the top, so every cell recurs with nearly uniform frequency and the
-#: instrument-specific cells (first) are spread across all splits.
+#: One ``(capability, instrument_type)`` cell per row, walked from the top by every
+#: split, so each cell recurs with the same frequency in all of them.
 CELLS: list[tuple[str, str]] = list(_INSTRUMENT_CAPABILITIES) + [
     (capability, instrument)
     for capability in _SHARED_CAPABILITIES
     for instrument in (SPOT, FORWARD, OPTION)
 ]
 
-#: How many tickets each cell contributes to a split. The split sizes follow
-#: from this and :data:`CELLS` rather than being fixed, so extending the cell
-#: table appends items at the end of each split and leaves every item already in
-#: it on the same cell with the same text, id and label. A recorded run can then
-#: be extended with the new items instead of being re-taken whole.
+#: How many tickets each cell contributes to a split. The split sizes follow from
+#: this and :data:`CELLS`, so extending the table appends items at the end of each
+#: split and leaves the ones already there on the same cell with the same text, id
+#: and label, letting a recorded run be extended instead of re-taken whole.
 REPLICATES: dict[str, int] = {"A": 4, "B": 4, "C": 4}
 
-#: ``D`` is a fixed list of unrescuable sentences rather than a walk of the cell
-#: table, so it is the one size that does not follow from ``REPLICATES``.
+#: ``D`` is a fixed list rather than a walk of the cell table, so its size is the
+#: one that does not follow from ``REPLICATES``.
 _D_SIZE = 40
 
 
@@ -279,8 +236,8 @@ def _sizes_for(cell_count: int) -> dict[str, int]:
 
 SPLIT_SIZES: dict[str, int] = _sizes_for(len(CELLS))
 
-#: Day offsets from :data:`TRADE_DATE` for a forward whose settlement is written
-#: out rather than given as a tenor. Both land on a business day after spot.
+#: Day offsets from :data:`TRADE_DATE` for a written-out forward settlement; both
+#: land on a business day after spot.
 _SETTLEMENT_OFFSETS: list[int] = [45, 60]
 
 #: Day offsets from :data:`TRADE_DATE` for an option expiry, all business days.
@@ -301,9 +258,7 @@ class CorpusError(ValueError):
 class Ticket:
     """A trade stated in full, before it is rendered as text.
 
-    ``variant`` names the exact shorthand the shifted arm will spell out and
-    ``head`` the word in front of the instrument, so the wording is part of the
-    ticket and the renderer only has to follow it.
+    ``variant`` and ``head`` fix the wording, so the renderer only follows it.
     """
 
     capability: str
@@ -326,8 +281,7 @@ class Ticket:
 def _add_months(value: date, months: int) -> date:
     """Add calendar months, clamping a long day to the 28th.
 
-    Mirrors the rule-based parser's own helper so a familiar tenor arm is
-    reproducible exactly.
+    Mirrors the rule-based parser's helper, so a familiar tenor reproduces exactly.
     """
     month_index = value.month - 1 + months
     return date(
@@ -350,9 +304,8 @@ def _shifted_variant(
 ) -> str:
     """The shifted spelling the item at ``position`` of its cell uses.
 
-    Two tags need a hand-written rule rather than a rotation: a nickname tag is
-    the nickname *of the ticket's own pair*, and only a month tenor has a glued
-    ``3s`` form, so a week tenor stays hyphenated.
+    Two tags need a rule rather than a rotation: a nickname tag is the nickname of
+    the ticket's own pair, and only a month tenor has a glued ``3s`` form.
     """
     if capability == "pair_nickname":
         return _NICKNAMES[pair]
@@ -366,17 +319,14 @@ def _shifted_variant(
 def _ticket(cell_index: int, k: int, split: str, rates: dict[str, float]) -> Ticket:
     """Choose the ticket occupying position ``k`` of cell ``cell_index``.
 
-    ``B`` and ``C`` walk an identical index sequence and deliberately make no use
-    of ``split`` except through ``v``; that is what lets ``B[i]`` and ``C[i]`` be
-    the same ticket said two ways.
+    ``B`` and ``C`` walk an identical index sequence and use ``split`` only through
+    ``v``, which is what makes ``B[i]`` and ``C[i]`` the same ticket.
     """
     capability, instrument_type = CELLS[cell_index]
 
-    # B and C both offset into the value pools by 6; A does not. 7 is invertible
-    # modulo 16 and 7 x 6 = 42 divides neither 16 nor 10, so for every A/B pair of
-    # the same cell and k both the pair and the notional differ. A nickname cell
-    # pins the pair pool to three entries, and there the notional alone keeps A and
-    # B apart.
+    # B and C offset into the value pools by 6, A by 0. For an A and a B item of
+    # the same cell and k both the pair and the notional differ; where a nickname
+    # cell pins the pair pool to three entries, the notional alone keeps them apart.
     v = k if split == "A" else k + 6
     position = cell_index + v
 
@@ -411,8 +361,7 @@ def _ticket(cell_index: int, k: int, split: str, rates: dict[str, float]) -> Tic
         premium = round(
             notional * _PREMIUM_FRACTIONS[(cell_index + v) % len(_PREMIUM_FRACTIONS)], 2
         )
-        # The base currency, so the stated premium currency is never the default
-        # the resolver would otherwise have chosen.
+        # The base currency, never the resolver's default.
         premium_currency = pair[:3]
 
     if instrument_type == FORWARD:
@@ -525,7 +474,7 @@ def _sentence(ticket: Ticket, *, shifted: bool) -> str:
 def _golden(ticket: Ticket) -> dict:
     """The trade the text describes, in the draft shape the parser emits.
 
-    Fields the text does not state are ``null`` here and are exempt when scoring.
+    Fields the text does not state are ``null`` here and exempt when scoring.
     """
     return {
         "instrument_type": ticket.instrument_type,
@@ -555,9 +504,9 @@ def _golden(ticket: Ticket) -> dict:
 def _item_variant(ticket: Ticket, split: str) -> str:
     """A readable name for the exact wording an item uses.
 
-    The tag's shifted spelling on the shifted arm and ``familiar`` on the other,
-    suffixed with the instrument head when that is not the plain ``forward``, so
-    a result can be broken down by wording as well as by tag.
+    The shifted spelling on the shifted arm and ``familiar`` on the other, plus the
+    instrument head when it is not the plain ``forward``, so a result can be broken
+    down by wording as well as by tag.
     """
     name = ticket.variant if split == "C" else "familiar"
     head = (ticket.head or "").strip()
@@ -570,11 +519,10 @@ def _item_variant(ticket: Ticket, split: str) -> str:
 # D: sentences with no valid ticket
 # --------------------------------------------------------------------------- #
 
-#: One kind per way of being unsalvageable. Only the ``d`` split uses these, and
-#: each kind is refused at a different stage, so the set also documents where a
-#: refusal can happen: pair and direction and notional are rule-based failures,
-#: ``nonpositive_notional`` fails draft validation and
-#: ``past_settlement_forward`` fails the settlement-window check.
+#: One kind per way of being unsalvageable. Each is refused at a different stage,
+#: so the set also documents where a refusal can happen: pair, direction, notional
+#: and ``vague_notional`` by the rules, ``nonpositive_notional`` by draft validation
+#: and ``past_settlement_forward`` by the settlement-window check.
 _D_KINDS: list[tuple[str, str]] = [
     ("missing_pair", "{direction} {notional} {base} spot for {counterparty}"),
     ("missing_direction", "{notional} {pair} spot for {counterparty}"),
@@ -631,17 +579,17 @@ def _invalid_items() -> list[dict]:
 # Reading a sentence back
 # --------------------------------------------------------------------------- #
 
-# The grammar is small and closed, so the reader is a strict inverse of the
-# renderer rather than another parser: it understands exactly the spellings
-# above, in both arms. If a sentence cannot be read back into the ticket it
-# claims to describe, the item is mislabelled - which is the point of having it.
+# The reader is the renderer's strict inverse rather than another parser: it
+# understands exactly the spellings above, in both arms. If a sentence cannot be
+# read back into the ticket it claims to describe, the item is mislabelled - which
+# is the point of having it.
 
 _READ_DIRECTION_SELL = re.compile(r"\bsell\b|\bshort\b")
 _READ_DIRECTION_BUY = re.compile(r"\bbuy\b|\blong\b")
 
 #: The notional always precedes the instrument phrase, so reading stops there and
-#: an option's reordered premium cannot be mistaken for a notional. A shifted
-#: forward may leave only ``value`` standing in for the whole instrument phrase.
+#: a reordered premium cannot be mistaken for one. A shifted forward may leave only
+#: ``value`` standing in for the whole instrument phrase.
 _READ_INSTRUMENT_HEAD = re.compile(
     r"\b(?:call|put|forward|frd|fwd|spot|value)\b", re.I
 )
@@ -690,8 +638,8 @@ _READ_TENOR_PHRASE = re.compile(
     r"\b(?:forward|frd|fwd)\s+in\s+(\d+)\s+(week|weeks|month|months)", re.I
 )
 _READ_TENOR_ADJECTIVE = re.compile(r"(\d+)-(week|month)\s+forward", re.I)
-#: A tenor count glued to an ``s`` means months. Read last, so it can only be a
-#: tenor when nothing else in the sentence states a settlement.
+#: A tenor count glued to an ``s`` means months. Read last, so it only applies when
+#: nothing else in the sentence states a settlement.
 _READ_TENOR_ATTACHED = re.compile(r"\b(\d+)s\b")
 
 _WORD_TO_CODE = {word: code for code, word in CURRENCY_WORDS.items()}
@@ -725,8 +673,7 @@ def _read_pair(text: str) -> str:
 
 
 def _read_notional(text: str) -> float:
-    # A separated number is unambiguous, so the separators settle it first: an
-    # apostrophe or comma grouping can never be a suffix's multiplier.
+    # A grouped number is unambiguous, so the separators settle it first.
     for pattern in (_READ_NOTIONAL_APOSTROPHE, _READ_NOTIONAL_GROUPED):
         match = pattern.search(text)
         if match:
@@ -826,9 +773,8 @@ def _read_instrument(text: str) -> tuple[str, dict]:
 def read_ticket(text: str) -> dict:
     """Reconstruct the trade ``text`` describes, using only the text.
 
-    The inverse of :func:`_sentence`, covering both arms. Used to prove that every
-    rendered sentence is a lossless encoding of its golden: the reader shares no
-    state with the generator, so agreement is evidence rather than tautology.
+    The inverse of :func:`_sentence`. It shares no state with the generator, so
+    agreeing with the golden is evidence rather than tautology.
     """
     head = _READ_INSTRUMENT_HEAD.search(text)
     before_instrument = text[: head.start()] if head else text
@@ -902,9 +848,8 @@ def _payload(rates: dict[str, tuple[float, date]]) -> dict:
         if split == "D":
             continue
         for index in range(count):
-            # Cell-major: item ``index`` sits in cell ``index // replicates``.
-            # Taking the cell this way rather than modulo the table length is
-            # what keeps existing items in place when the table grows.
+            # Cell-major, not modulo the table length: that is what keeps existing
+            # items in place when the table grows.
             cell_index, k = divmod(index, REPLICATES[split])
             ticket = _ticket(cell_index, k, split, spot_rates)
             items.append(
@@ -934,9 +879,8 @@ def _payload(rates: dict[str, tuple[float, date]]) -> dict:
 def digest(payload: dict) -> str:
     """The digest a payload must carry in its ``corpus_sha256`` field.
 
-    It covers every field but that one, so ``digest(load())`` equals the value
-    the file stores. The JSON is canonical -- sorted keys, no whitespace -- so
-    reindenting the file cannot change the digest, and only a different value can.
+    It covers every field but that one, and is computed over a canonical rendering,
+    so reindenting the file cannot change it.
     """
     body = {key: value for key, value in payload.items() if key != "corpus_sha256"}
     blob = json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
@@ -955,10 +899,9 @@ def build(snapshot: FrozenRateProvider | None = None) -> dict:
 def dumps(payload: dict) -> str:
     """The corpus file's text, with the cell table written one cell per line.
 
-    ``indent=2`` spreads a two-element cell over four lines, which buries the
-    table the whole design is organised around; every other value reads better
-    indented. Only the layout is affected -- the digest is computed over a
-    compact rendering of the same object, so it never moves with the layout.
+    ``indent=2`` would spread each two-element cell over four lines and bury the
+    table the design is organised around; every other value reads better indented.
+    Layout only - the digest ignores it.
     """
     lines: list[str] = []
     for key, value in payload.items():

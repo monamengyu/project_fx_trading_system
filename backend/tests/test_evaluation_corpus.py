@@ -32,6 +32,7 @@ from app.services.nl_parse.parser import parse_trade, resolve_draft
 from app.services.nl_parse.schemas import NLTradeDraft
 from evaluation import corpus
 from evaluation.frozen_rates import FrozenRateProvider
+from evaluation.scoring import stated_problems
 
 FAMILIAR = ("A", "B")
 VALID = ("A", "B", "C")
@@ -76,27 +77,6 @@ def payload() -> dict:
 def _draft(value: dict) -> dict:
     """A draft dict as JSON, so dates and floats compare by value."""
     return NLTradeDraft.model_validate(value).model_dump(mode="json")
-
-
-def _stated_problems(produced: dict, golden: dict) -> list[str]:
-    """The fields the text states that ``produced`` got wrong.
-
-    Fields the golden leaves ``null`` are not stated in the text, so the parser
-    is free to invent them and they are exempt from the comparison.
-    """
-    problems: list[str] = []
-    for key, want in golden.items():
-        if key == "instrument" or want is None:
-            continue
-        if produced.get(key) != want:
-            problems.append(f"{key}: {produced.get(key)!r} != {want!r}")
-    for key, want in golden["instrument"].items():
-        if want is None:
-            continue
-        got = produced["instrument"].get(key)
-        if got != want:
-            problems.append(f"instrument.{key}: {got!r} != {want!r}")
-    return problems
 
 
 def _key(golden: dict) -> str:
@@ -343,7 +323,7 @@ def test_baseline_reproduces_every_familiar_item(payload):
     for split in FAMILIAR:
         for item in corpus.items_of(payload, split):
             produced = _draft(parse_rule_based(item["text"]))
-            problems = _stated_problems(produced, item["golden"])
+            problems = stated_problems(produced, item["golden"])
             assert not problems, f"{item['item_id']}: {problems}"
 
 
@@ -362,7 +342,7 @@ def test_every_shifted_item_is_detectably_wrong(payload):
             produced = _draft(parse_rule_based(item["text"]))
         except ParseError:
             continue
-        problems = _stated_problems(produced, item["golden"])
+        problems = stated_problems(produced, item["golden"])
         assert problems, f"{item['item_id']} is shifted but still parsed correctly"
 
 

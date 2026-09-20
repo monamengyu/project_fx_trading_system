@@ -384,6 +384,65 @@ async def test_a_hung_item_is_recorded_as_a_timeout(payload, monkeypatch):
     assert records[0]["item_timeout_s"] == 0.05
 
 
+async def test_a_timed_out_item_does_not_take_the_run_with_it(payload, monkeypatch):
+    """A slow item must cost one record, not the whole run.
+
+    httpx leaves an extra cancel set on the task it was cancelled in, and a
+    cancellation that escapes that way cannot be caught and recovered from. When
+    it landed on the run's own task the run died on the first slow item and
+    wrote nothing at all, so the fix is to keep the deadline's cancel in a task
+    of its own. The second item here is what proves the run carried on.
+    """
+    calls = {"n": 0}
+
+    async def slow_then_refusing(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise ParseError("could not determine notional")
+        task = asyncio.current_task()
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            task.cancel()
+            raise
+
+    monkeypatch.setattr(runner, "parse_trade", slow_then_refusing)
+    records = await runner.run_model(
+        payload,
+        "rule-based",
+        run_id="slow-first",
+        splits=("A",),
+        limit=2,
+        item_timeout_s=0.05,
+    )
+    items = _items(records)
+    assert [item["outcome"] for item in items] == [scoring.TIMEOUT, scoring.REFUSED]
+    assert scoring.counts_by_split(records)["A"][scoring.TIMEOUT] == 1
+
+
+async def test_an_outer_cancellation_is_not_swallowed(payload, monkeypatch):
+    """Someone else cancelling the run is not the same as an item timing out."""
+
+    async def hang(*args, **kwargs):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(runner, "parse_trade", hang)
+    task = asyncio.create_task(
+        runner.run_model(
+            payload,
+            "rule-based",
+            run_id="cancelled",
+            splits=("A",),
+            limit=1,
+            item_timeout_s=30,
+        )
+    )
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
 # --------------------------------------------------------------------------- #
 # The evidence file
 # --------------------------------------------------------------------------- #

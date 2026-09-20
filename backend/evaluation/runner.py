@@ -108,6 +108,31 @@ async def run_model(
     return records
 
 
+async def _parse_with_deadline(
+    text: str,
+    model_id: str,
+    provider: FrozenRateProvider,
+    item_timeout_s: float,
+):
+    """Parse one ticket, abandoning the call if the deadline passes.
+
+    The call gets its own task so that the cancel which abandons a slow request
+    stays in it. Cancelling this task instead would cancel the whole run: the
+    transport re-arms the cancel while unwinding, and a cancellation that
+    escapes that way cannot be caught and recovered from.
+    """
+    call = asyncio.ensure_future(
+        parse_trade(text, model_id, rate_provider=provider)
+    )
+    done, _ = await asyncio.wait({call}, timeout=item_timeout_s)
+    if not done:
+        call.cancel()
+        # Let the transport finish unwinding, so the next item starts clean.
+        await asyncio.wait({call})
+        raise TimeoutError
+    return call.result()
+
+
 async def _attempt(
     item: dict,
     model_id: str,
@@ -130,9 +155,8 @@ async def _attempt(
     raw: dict | None = None
 
     try:
-        result = await asyncio.wait_for(
-            parse_trade(item["text"], model_id, rate_provider=provider),
-            item_timeout_s,
+        result = await _parse_with_deadline(
+            item["text"], model_id, provider, item_timeout_s
         )
         draft = result.draft.model_dump(mode="json")
         defaulted = list(result.defaulted_fields)

@@ -313,11 +313,11 @@ def read_records(path: Path | str | None = None) -> list[dict]:
     ]
 
 
-def _use_utf8_console(*streams: object) -> None:
+def use_utf8_console(*streams: object) -> None:
     """Point the console streams at UTF-8.
 
-    A results path can hold characters the console's code page cannot encode,
-    which would otherwise abort the command just after its evidence was written.
+    A results path can hold characters the code page cannot encode, which would abort
+    the command just after it wrote its evidence.
     """
     for stream in streams:
         reconfigure = getattr(stream, "reconfigure", None)
@@ -330,7 +330,7 @@ def _use_utf8_console(*streams: object) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    _use_utf8_console(sys.stdout, sys.stderr)
+    use_utf8_console(sys.stdout, sys.stderr)
     parser = argparse.ArgumentParser(description="Run the corpus against one model.")
     parser.add_argument("--model", required=True, help="a model id from models.py")
     parser.add_argument("--run-id", required=True, help="names this run, once and for all")

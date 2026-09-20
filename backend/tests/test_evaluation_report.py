@@ -105,8 +105,9 @@ def baseline(records) -> tuple[dict, list[dict]]:
     return report.select_run(records, "baseline")
 
 
-def test_a_selection_the_file_does_not_support_is_an_error(records):
+def test_a_selection_the_file_does_not_support_is_an_error():
     """An unknown id, no header at all, and a run written twice are all refusals."""
+    records = [_header("baseline"), _item("A-000", run_id="baseline")]
     assert report.select_run(records)[0]["run_id"] == "baseline"
     assert report.known_runs(records) == ["baseline"]
     with pytest.raises(report.ReportError, match="no run 'nope'"):
@@ -390,11 +391,12 @@ def test_a_run_that_did_not_finish_is_not_shown_as_a_score():
 def test_the_command_reports_the_run_in_the_file_it_was_pointed_at(tmp_path, capsys):
     target = tmp_path / "runs.jsonl"
     shutil.copyfile(runner.DEFAULT_RESULTS_PATH, target)
+    newest = report.known_runs(runner.read_records(target))[-1]
     assert report.main(["--results", str(target)]) == 0
     written = capsys.readouterr().out
     assert "== accuracy by split ==" in written
     assert "== B against C ==" in written
-    assert "run      baseline" in written
+    assert any(line.split() == ["run", newest] for line in written.splitlines())
 
     code = report.main(
         ["--results", str(target), "--run-id", "baseline", "--against", "baseline"]
@@ -423,11 +425,14 @@ def test_the_command_survives_a_results_path_the_console_cannot_encode(tmp_path,
     assert "== accuracy by split ==" in decoded
 
 
-def test_the_command_says_when_the_corpus_has_moved_on(tmp_path, capsys, monkeypatch):
+def test_the_command_says_when_the_corpus_has_moved_on(tmp_path, capsys):
     """A stored run is only readable against the corpus it was taken against."""
     target = tmp_path / "runs.jsonl"
     records = runner.read_records(runner.DEFAULT_RESULTS_PATH)
-    records[0] = {**records[0], "corpus_sha256": "9" * 64}
+    stale = report.known_runs(records)[-1]
+    for record in records:
+        if record.get("kind") == runner.KIND_RUN and record["run_id"] == stale:
+            record["corpus_sha256"] = "9" * 64
     runner.write_records(records, target)
 
     assert report.main(["--results", str(target)]) == 0

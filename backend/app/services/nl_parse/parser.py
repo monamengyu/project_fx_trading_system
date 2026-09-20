@@ -17,6 +17,7 @@ from app.services.business_calendar import (
     spot_value_date,
 )
 from app.services.market_data.frankfurter_client import get_rate
+from app.services.market_data.pairs import SUPPORTED_PAIRS
 from app.services.nl_parse.baseline import ParseError
 from app.services.nl_parse.clients import get_client
 from app.services.nl_parse.models import get_model_info
@@ -96,6 +97,10 @@ async def resolve_draft(
     """
     pair = draft.currency_pair
     currency_1, currency_2 = pair[:3], pair[3:]
+    # The draft schema asks only for six uppercase letters, so an invented code
+    # such as USDGBP arrives here looking well-formed.
+    if pair not in SUPPORTED_PAIRS:
+        raise ParseError(f"{pair} is not a supported currency pair")
     inst = draft.instrument
     today = current_trade_date()
     defaulted: list[str] = []

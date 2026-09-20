@@ -210,6 +210,26 @@ async def test_resolver_rejects_bad_settlement_window():
         await draft_to_trade_create(draft)
 
 
+@pytest.mark.parametrize("instrument_type", ["SPOT", "FORWARD", "OPTION"])
+async def test_resolver_refuses_a_six_letter_code_that_is_not_a_pair(instrument_type):
+    """Regression: an invented pair escaped as a KeyError, discarding the record."""
+    instrument = {"instrument_type": instrument_type, "rate": 1.09}
+    if instrument_type == "OPTION":
+        instrument = {
+            "instrument_type": "OPTION",
+            "option_type": "CALL",
+            "strike_rate": 1.10,
+            "expiry_date": date(2026, 12, 18),
+        }
+    draft = _draft(
+        currency_pair="USDGBP",
+        instrument_type=instrument_type,
+        instrument=ParsedInstrument(**instrument),
+    )
+    with pytest.raises(ParseError):
+        await draft_to_trade_create(draft)
+
+
 async def test_pinned_date_keeps_resolver_and_validator_in_step():
     """Regression: pinning only the resolver made the validator reject its output.
 

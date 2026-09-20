@@ -306,6 +306,12 @@ def test_the_integrity_check_fires_on_a_record_that_contradicts_itself(
     assert len(problems) == 1 and expected in problems[0]
 
 
+def test_a_sentence_that_was_never_a_ticket_is_not_a_record_fault():
+    """Answered instead of refused, with no golden to blame: expected, not a fault."""
+    record = _item("D-000", split="D", capability=corpus.NO_VALID_TICKET, correct=False)
+    assert report.integrity_problems([record]) == []
+
+
 def test_an_unexplained_miss_is_shouted_about_in_the_report():
     """The one fault that would otherwise pass silently: wrong, and unexplained."""
     header = _header("synthetic", item_count=1)

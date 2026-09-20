@@ -104,8 +104,9 @@ def integrity_problems(items: list[dict]) -> list[str]:
     """Records that contradict themselves, one line each.
 
     These cannot happen in a correct run, so a line here is a fault in the ledger
-    rather than a result. The quiet one is the third: a trade that came back,
-    matched nothing and blamed no field has no explanation attached to it at all.
+    rather than a result. Sentences that were never a ticket are exempt from the
+    blame checks below: they carry no golden to disagree with, so no field can be
+    to blame even when the parser answered them.
     """
     problems: list[str] = []
     for record in items:
@@ -116,7 +117,12 @@ def integrity_problems(items: list[dict]) -> list[str]:
             problems.append(f"{item_id}: unchanged outcome {outcome!r}")
         if record.get("correct") and wrong:
             problems.append(f"{item_id}: marked correct with {len(wrong)} wrong field(s)")
-        if outcome == scoring.PARSED and not record.get("correct") and not wrong:
+        if (
+            outcome == scoring.PARSED
+            and not record.get("correct")
+            and not wrong
+            and record.get("capability") != corpus.NO_VALID_TICKET
+        ):
             problems.append(f"{item_id}: parsed, wrong, and no field to blame")
         if (
             outcome == scoring.REFUSED

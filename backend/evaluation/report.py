@@ -684,9 +684,13 @@ def render_contrast(
     """Two runs side by side, or the reason their numbers may not be.
 
     The guard comes first and no flag bypasses it: a difference between two rates is
-    only a difference if both were measured the same way.
+    only a difference if both were measured the same way. A shift is the left run
+    minus the right one, so a positive number is the left run ahead.
     """
-    lines = [f"== {left['run_id']} against {right['run_id']} =="]
+    lines = [
+        f"== {left['run_id']} against {right['run_id']} ==",
+        "  every shift is the left run minus the right",
+    ]
     problems = compare_headers(left, right)
     if problems:
         lines.append("  not comparable, so no difference is taken:")
@@ -705,7 +709,7 @@ def render_contrast(
     delta = (
         "-"
         if left_rate is None or right_rate is None
-        else f"{100 * (right_rate - left_rate):+.1f}pp"
+        else f"{100 * (left_rate - right_rate):+.1f}pp"
     )
     lines += _table(
         ["scope", left_id, right_id, "shift"],
@@ -722,7 +726,7 @@ def render_contrast(
         delta = (
             "-"
             if left_row["accuracy"] is None or right_row["accuracy"] is None
-            else f"{100 * (right_row['accuracy'] - left_row['accuracy']):+.1f}pp"
+            else f"{100 * (left_row['accuracy'] - right_row['accuracy']):+.1f}pp"
         )
         rows.append(
             [
@@ -749,7 +753,7 @@ def render_contrast(
         together = (
             "-"
             if left_drop is None or right_drop is None
-            else f"{100 * (right_drop - left_drop):+.1f}pp"
+            else f"{100 * (left_drop - right_drop):+.1f}pp"
         )
         rows.append([capability, shown(left_drop), shown(right_drop), together])
     lines += _table(["per-capability shift", FAMILIAR_ARM, SHIFTED_ARM, "difference"], rows)

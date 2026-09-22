@@ -341,6 +341,20 @@ def test_a_run_is_differenced_only_against_a_comparable_run(records):
     assert "not comparable, so no difference is taken:" in text
 
 
+def test_a_shift_is_the_left_run_minus_the_right():
+    """Positive means the run being reported is ahead, not the one it is shown against."""
+    ahead = [_item("A-000"), _item("A-001")]
+    behind = [_item("A-000"), _item("A-001", correct=False)]
+
+    text = report.render_contrast(_header("ahead"), ahead, _header("behind"), behind)
+    assert "every shift is the left run minus the right" in text
+    assert "+50.0pp" in text
+
+    flipped = report.render_contrast(_header("behind"), behind, _header("ahead"), ahead)
+    assert "-50.0pp" in flipped
+    assert "+50.0pp" not in flipped
+
+
 def test_only_a_change_to_how_the_run_was_measured_blocks_a_comparison():
     """The model is the thing being compared; the method is what has to match."""
     later = _header("right", model_id="other", notes="later")

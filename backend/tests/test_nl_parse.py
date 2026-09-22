@@ -531,6 +531,54 @@ async def test_chat_request_carries_the_whole_conversation(monkeypatch, kind):
     assert completion.model == "served-model"
 
 
+@pytest.mark.parametrize("kind", ["openai-compatible", "openrouter"])
+@pytest.mark.parametrize(
+    "reply",
+    [
+        {},
+        {"choices": []},
+        {"choices": [{"message": {"content": None}, "finish_reason": "stop"}]},
+        {"choices": [{"message": {"content": "   "}}]},
+        {"choices": [{"message": {}}]},
+    ],
+)
+async def test_a_reply_with_no_content_is_a_provider_fault(monkeypatch, kind, reply):
+    """A 200 carrying no message is the provider failing, not the model answering."""
+    from app.services.nl_parse import clients as clients_module
+    from app.services.nl_parse.prompts import build_messages
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return reply
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+        async def post(self, url, json=None, headers=None):
+            return FakeResponse()
+
+    monkeypatch.setattr(clients_module.httpx, "AsyncClient", FakeAsyncClient)
+    if kind == "openrouter":
+        client = clients_module.OpenRouterClient("test-key", "openai/gpt-5.6-luna")
+    else:
+        client = clients_module.OpenAICompatClient(
+            "http://localhost:11434/v1", None, "llama3.2:3b"
+        )
+
+    with pytest.raises(RuntimeError, match="no message content"):
+        await client.complete_json(build_messages("Buy EURUSD spot"))
+
+
 def test_system_prompt_honours_the_pin():
     with override_trade_date(PINNED_DAY):
         prompt = build_system_prompt()

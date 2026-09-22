@@ -60,6 +60,24 @@ def _strip_code_fences(text: str) -> str:
     return text
 
 
+def _message_content(data: dict) -> str:
+    """The assistant text from a chat-completions reply.
+
+    A provider can answer 200 with no content at all -- an empty choice list, or a
+    message whose content is null. That is a provider fault, not the model
+    declining, so it is raised rather than handed on to be parsed.
+    """
+    choices = data.get("choices") or []
+    choice = choices[0] if choices else {}
+    content = (choice.get("message") or {}).get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError(
+            "provider returned no message content "
+            f"(finish_reason={choice.get('finish_reason')!r})" 
+        )
+    return content
+
+
 def _last_user(messages: list[dict]) -> str:
     """The text to parse: the final user turn of a conversation."""
     for message in reversed(messages):
@@ -112,7 +130,7 @@ class OpenAICompatClient:
                     )
                     response.raise_for_status()
                 data = response.json()
-                content = data["choices"][0]["message"]["content"]
+                content = _message_content(data)
                 return Completion(
                     content=json.loads(content),
                     usage=data.get("usage"),
@@ -171,9 +189,8 @@ class OpenRouterClient:
                 f"cannot reach OpenRouter at {settings.openrouter_base_url}: {exc}"
             ) from exc
         data = response.json()
-        content = data["choices"][0]["message"]["content"]
         return Completion(
-            content=json.loads(_strip_code_fences(content)),
+            content=json.loads(_strip_code_fences(_message_content(data))),
             usage=data.get("usage"),
             model=data.get("model"),
         )

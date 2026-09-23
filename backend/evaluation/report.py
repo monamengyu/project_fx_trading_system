@@ -13,9 +13,17 @@ arm exists to produce.
 Usage::
 
     cd backend
-    python -m evaluation.report
-    python -m evaluation.report --run-id baseline
-    python -m evaluation.report --run-id r005-gpt56luna --against baseline
+    python3 -m evaluation.report
+    python3 -m evaluation.report --run-id baseline
+    python3 -m evaluation.report --run-id ollama-llama32-3b
+    python3 -m evaluation.report --run-id ollama-qwen25-3b
+    python3 -m evaluation.report --run-id ollama-gemma2-2b
+    python3 -m evaluation.report --run-id ollama-phi35
+    python3 -m evaluation.report --run-id openrouter-gpt56-luna
+    python3 -m evaluation.report --run-id openrouter-glm53-flash
+    python3 -m evaluation.report --run-id openrouter-deepseek-v4-flash
+    python3 -m evaluation.report --run-id openrouter-gemini38-flash
+    python3 -m evaluation.report --run-id openrouter-gpt56-luna --against baseline
 """
 
 from __future__ import annotations

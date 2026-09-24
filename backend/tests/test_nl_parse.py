@@ -426,7 +426,7 @@ async def test_parse_trade_sends_the_worked_examples():
         await parse_trade("Buy EURUSD spot", model_id="llama3.2:3b")
 
     assert seen == [build_messages("Buy EURUSD spot")]
-    assert len(seen[0]) == 12, "system + five worked examples + the text"
+    assert len(seen[0]) == 14, "system + six worked examples + the text"
     assert seen[0][-1] == {"role": "user", "content": "Buy EURUSD spot"}
 
 
@@ -471,12 +471,33 @@ def test_the_demonstrations_state_the_dates_a_convention_fixes():
     from app.services.nl_parse.prompts import _few_shots
 
     for _, answer in _few_shots(PINNED_DAY):
+        if "instrument" not in answer:
+            continue  # the decline demonstration has no trade to date
         instrument = answer["instrument"]
         if instrument["instrument_type"] == "OPTION":
             expiry = date.fromisoformat(instrument["expiry_date"])
             assert instrument["delivery_date"] == add_business_days(expiry, 2).isoformat()
         else:
             assert instrument["settlement_date"] is not None
+
+
+async def test_a_declined_instruction_is_a_refusal_not_a_retry():
+    """A decline is an answer, so it must not be retried as a malformed draft."""
+    from app.services.nl_parse.clients import Completion
+
+    seen = []
+
+    class FakeClient:
+        async def complete_json(self, messages):
+            seen.append(messages)
+            return Completion(content={"error": "the notional is vague"}, usage={})
+
+    with patch("app.services.nl_parse.parser.get_client", return_value=FakeClient()):
+        with pytest.raises(ParseError) as caught:
+            await parse_trade("Sell a couple of million euros, spot", model_id="llama3.2:3b")
+
+    assert len(seen) == 1, "the decline was retried as if it were a malformed draft"
+    assert "declined" in str(caught.value)
 
 
 async def test_baseline_client_rejects_a_conversation_without_a_user_turn():
@@ -530,7 +551,7 @@ async def test_chat_request_carries_the_whole_conversation(monkeypatch, kind):
     completion = await client.complete_json(messages)
 
     assert captured["payload"]["messages"] == messages
-    assert len(captured["payload"]["messages"]) == 12
+    assert len(captured["payload"]["messages"]) == 14
     assert completion.content == {"instrument_type": "SPOT"}
     assert completion.model == "served-model"
 

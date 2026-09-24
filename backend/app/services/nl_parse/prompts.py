@@ -10,7 +10,7 @@ from app.services.business_calendar import (
 )
 from app.services.market_data.pairs import SUPPORTED_PAIRS
 
-SYSTEM_PROMPT = """You are an FX trade desk assistant. Convert a trader's natural-language instruction into a single structured JSON trade. Respond with ONLY valid JSON — no prose, no markdown, no code fences.
+SYSTEM_PROMPT = """You are an FX trade desk assistant. A trader's instruction either states a bookable trade or it does not. Respond with ONLY valid JSON — no prose, no markdown, no code fences.
 
 Supported currency pairs: {pairs}.
 Direction: BUY (buy the first currency, sell the second) or SELL (the opposite).
@@ -23,7 +23,9 @@ Instruments:
 
 Today is {today}. The spot value date (today + 2 business days) is {spot}.
 
-JSON schema — output exactly this shape, all keys present; use null for fields that do not apply:
+Output a trade only when the instruction states one. When it does not, decline. Never invent, guess or default a value to make an instruction fit: a booked trade with an invented field is worse than a refusal.
+
+JSON schema — for a bookable trade, output exactly this shape, all keys present; use null for fields that do not apply:
 {{
   "instrument_type": "SPOT" | "FORWARD" | "OPTION",
   "currency_pair": {pair_union},
@@ -46,6 +48,9 @@ JSON schema — output exactly this shape, all keys present; use null for fields
   }}
 }}
 
+To decline, output exactly this and nothing else:
+{{"error": "<what the instruction is missing or what is wrong with it>"}}
+
 Rules:
 - Settlement/expiry dates must be business days (Mon-Fri).
 - A SPOT settlement_date is {spot}; later dates must be FORWARD.
@@ -53,7 +58,8 @@ Rules:
 - An option's delivery_date is two business days after its expiry_date.
 - Do NOT output currency_2 — it is derived from the pair.
 - If a rate is not stated, leave it null (the system fills the market rate).
-- If the instruction is ambiguous, output your single best interpretation.
+- Decline when the instruction cannot be booked as stated: no currency pair, or a pair outside the supported list; no direction; a notional that is missing, not positive, or vague ("a few million"); an option with no expiry; a forward settling on or before {spot}.
+- An unusual but complete instruction is still bookable: book it, with your best reading of the wording.
 """
 
 #: Every demonstration states its dates the familiar way, whether by spelling them
@@ -175,6 +181,10 @@ def _few_shots(today: date) -> list[tuple[str, dict]]:
                     exercise_style="EUROPEAN",
                 ),
             },
+        ),
+        (
+            "Sell a couple of million euros against dollars, spot",
+            {"error": "the notional is vague: no definite amount is stated"},
         ),
     ]
 

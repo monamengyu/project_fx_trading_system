@@ -56,6 +56,22 @@ class ResolvedTrade:
     defaulted_fields: list[str]
 
 
+class _Declined(Exception):
+    """The model answered that the instruction is not a bookable trade.
+
+    Deliberately not a ``ParseError``: that subclasses ``ValueError``, which
+    :func:`parse_trade` catches in order to retry a malformed draft. A decline is an
+    answer, so it has to escape that.
+    """
+
+
+def _decline_reason(content: object) -> str | None:
+    """The reason a model gave for declining, or ``None`` when it answered with a trade."""
+    if isinstance(content, dict) and "error" in content and "instrument_type" not in content:
+        return str(content["error"])
+    return None
+
+
 def _fill_if_none(value, fallback, name: str, defaulted: list[str]):
     """Use ``fallback`` when ``value`` is ``None``, recording that we did."""
     if value is None:
@@ -209,6 +225,9 @@ async def parse_trade(
             completion = await client.complete_json(messages)
             usage = _accumulate_usage(usage, completion.usage)
             served_model = completion.model or served_model
+            reason = _decline_reason(completion.content)
+            if reason is not None:
+                raise _Declined(reason)
             draft = NLTradeDraft.model_validate(completion.content)
             resolved = await resolve_draft(draft, rate_provider=rate_provider)
             return ParseResult(
@@ -220,6 +239,10 @@ async def parse_trade(
                 defaulted_fields=resolved.defaulted_fields,
                 served_model=served_model,
             )
+        except _Declined as exc:
+            # Retrying would tell the model its refusal was wrong and invite it to
+            # invent the trade instead, which is the answer the corpus scores as a miss.
+            raise ParseError(f"model {model_id} declined the instruction: {exc}") from exc
         except (ValidationError, json.JSONDecodeError, ValueError) as exc:
             last_error = exc
             if attempt == 0 and info.kind != "baseline":

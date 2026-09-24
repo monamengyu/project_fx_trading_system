@@ -230,7 +230,8 @@ def test_the_shift_is_reported_worst_first(baseline):
     _, items = baseline
     rows = report.contrast(items)
     assert [row["capability"] for row in rows] != []
-    drops = [row["drop"] for row in rows]
+    # A tag the run holds no items for is a gap with no drop to place.
+    drops = [row["drop"] for row in rows if row["drop"] is not None]
     assert drops == sorted(drops), "a tag that lost less must not be printed above one that lost more"
 
 

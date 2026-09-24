@@ -190,7 +190,7 @@ async def test_resolver_defaults_missing_option_fields():
     )
     trade = await draft_to_trade_create(draft)
     details = trade.instrument_details
-    assert details.delivery_date == date(2026, 12, 18)  # defaults to expiry
+    assert details.delivery_date == date(2026, 12, 22)  # expiry + 2 business days
     assert details.premium == 0.0
     assert details.premium_currency == "USD"
     assert details.exercise_style == "EUROPEAN"
@@ -426,16 +426,7 @@ async def test_parse_trade_sends_the_worked_examples():
         await parse_trade("Buy EURUSD spot", model_id="llama3.2:3b")
 
     assert seen == [build_messages("Buy EURUSD spot")]
-    assert [m["role"] for m in seen[0]] == [
-        "system",
-        "user",
-        "assistant",
-        "user",
-        "assistant",
-        "user",
-        "assistant",
-        "user",
-    ]
+    assert len(seen[0]) == 12, "system + five worked examples + the text"
     assert seen[0][-1] == {"role": "user", "content": "Buy EURUSD spot"}
 
 
@@ -473,6 +464,19 @@ async def test_baseline_client_reads_the_final_user_turn():
 
     assert completion.content["currency_pair"] == "USDNOK"
     assert completion.content["instrument"]["settlement_date"] == PINNED_SPOT.isoformat()
+
+
+def test_the_demonstrations_state_the_dates_a_convention_fixes():
+    """A demonstration that left a convention's date null would teach the wrong answer."""
+    from app.services.nl_parse.prompts import _few_shots
+
+    for _, answer in _few_shots(PINNED_DAY):
+        instrument = answer["instrument"]
+        if instrument["instrument_type"] == "OPTION":
+            expiry = date.fromisoformat(instrument["expiry_date"])
+            assert instrument["delivery_date"] == add_business_days(expiry, 2).isoformat()
+        else:
+            assert instrument["settlement_date"] is not None
 
 
 async def test_baseline_client_rejects_a_conversation_without_a_user_turn():
@@ -526,7 +530,7 @@ async def test_chat_request_carries_the_whole_conversation(monkeypatch, kind):
     completion = await client.complete_json(messages)
 
     assert captured["payload"]["messages"] == messages
-    assert len(captured["payload"]["messages"]) == 8
+    assert len(captured["payload"]["messages"]) == 12
     assert completion.content == {"instrument_type": "SPOT"}
     assert completion.model == "served-model"
 

@@ -52,6 +52,7 @@ CELL_SPLITS: tuple[str, ...] = tuple(corpus.REPLICATES)
 #: comparison is about.
 COMPARABLE_FIELDS: tuple[str, ...] = (
     "corpus_sha256",
+    "system_prompt_sha256",
     "runner_version",
     "scorer_version",
     "splits",

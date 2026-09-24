@@ -8,9 +8,9 @@ it describes is a mislabelled item.
 ===========  ===  ==================================================================
 split        n    role
 ===========  ===  ==================================================================
-``A``        108  familiar wording
-``B``        108  familiar wording, different tickets
-``C``        108  shifted wording, each item twinned to a ``B`` item
+``A``        112  familiar wording
+``B``        112  familiar wording, different tickets
+``C``        112  shifted wording, each item twinned to a ``B`` item
 ``D``         40  no valid ticket exists; the correct answer is a refusal
 ===========  ===  ==================================================================
 
@@ -29,13 +29,17 @@ cannot read. Both arms use real desk shorthand:
 * ``m``/``mm``/``million``/``mio``, and ``billion``/``bn``/``bio``/``yard``/``yards``;
 * ``forward``/``frd``/``fwd``, and a bare ``opt``;
 * ``settling <date>``/``value <date>``/``3-month forward``/``3s``;
+* ``expiring in 3 months``/``3-month call``;
 * ``against``/``versus``/``agst``, and ``strike of``/``K``;
 * the desk names ``cable`` (GBPUSD), ``aussie`` (AUDUSD) and ``kiwi`` (NZDUSD).
 
 Deliberately never stated, so a failure is never miscounted: ``rate`` (market
 data, not parsing), ``comment`` and ``exercise_style`` (resolver defaults, hence
-the confidence signal), the option's ``delivery_date`` and ``premium_date`` (the
-resolver derives them), and a SPOT settlement date (a resolver convention).
+the confidence signal), and the option's ``premium_date`` (the resolver derives
+it). The three dates a convention rather than the sentence supplies *are* stated
+and scored, because reading desk shorthand means knowing them: a spot settles on
+the T+2 spot date, a forward tenor runs from that spot date rather than from the
+trade date, and an option delivers two business days after its expiry.
 
 Regenerate after any change here::
 
@@ -56,7 +60,12 @@ from hashlib import sha256
 from pathlib import Path
 
 from app.models.enums import Currency, CurrencyPair
-from app.services.business_calendar import effective_trade_date
+from app.services.business_calendar import (
+    add_months,
+    effective_trade_date,
+    option_delivery_date,
+    spot_value_date,
+)
 from evaluation.frozen_rates import FrozenRateProvider
 
 DEFAULT_CORPUS_PATH = Path(__file__).with_name("corpus.json")
@@ -69,6 +78,10 @@ SPOT = "SPOT"
 FORWARD = "FORWARD"
 OPTION = "OPTION"
 
+#: The spot value date, T+2 from :data:`TRADE_DATE`. A spot ticket settles on it
+#: and every tenor runs from it.
+SPOT_DATE: date = spot_value_date(TRADE_DATE)
+
 #: Every supported pair, in ``CurrencyPair`` order. Checked against the frozen
 #: snapshot at build time, so a change to either side is a loud failure.
 PAIRS: list[str] = [pair.value for pair in CurrencyPair]
@@ -79,9 +92,11 @@ NOTIONALS: list[float] = [float(millions) * 1_000_000 for millions in range(1, 1
 COUNTERPARTIES = ["BANK_A", "BANK_B", "BANK_C"]
 
 #: Tenors with more than one spelling, using the rule-based parser's own
-#: arithmetic so a familiar arm reproduces exactly. ``(1, "month")`` is absent
-#: because it coincides with the parser's default forward settlement, which would
-#: make a shifted ``1-month forward`` accidentally correct and the arm undetectable.
+#: arithmetic so a familiar arm reproduces exactly. ``(1, "month")`` is absent:
+#: it coincided with the parser's one-month default for a forward stating no date,
+#: which made a shifted ``1-month forward`` accidentally correct. A tenor now runs
+#: from the spot date rather than the trade date, which ends that coincidence, but
+#: the pool is left at four entries.
 TENORS: list[tuple[int, str]] = [(1, "week"), (2, "weeks"), (3, "months"), (6, "months")]
 
 #: The spoken name each currency is rendered as, matching the parser's own
@@ -174,12 +189,15 @@ _INSTRUMENT_CAPABILITIES: list[tuple[str, str]] = [
     ("tenor_form", FORWARD), # the forward's tenor is stated, e.g. ``3-month forward``
     ("date_written", FORWARD), # the forward's settlement is written out, e.g. ``forward settling 2026-10-20``
     ("option_terms", OPTION), # the option's terms are stated, e.g. ``call strike of 1.2500 expiring 2026-10-20 premium of 25000 USD``
+    ("tenor_form", OPTION), # the option's expiry is a tenor, e.g. ``3-month call``
 ]
 
-#: All capability tags, in cell-table order.
-CAPABILITIES: list[str] = [
-    capability for capability, _ in _INSTRUMENT_CAPABILITIES
-] + list(_SHARED_CAPABILITIES)
+#: All capability tags, in cell-table order, each named once. A tag with a cell per
+#: instrument appears in the table more than once but is still one skill, so it is
+#: listed here only the first time.
+CAPABILITIES: list[str] = list(
+    dict.fromkeys(capability for capability, _ in _INSTRUMENT_CAPABILITIES)
+) + list(_SHARED_CAPABILITIES)
 
 #: Heads the parser already reads, so a forward can vary its wording while staying
 #: familiar.
@@ -243,6 +261,7 @@ _SETTLEMENT_OFFSETS: list[int] = [45, 60]
 #: Day offsets from :data:`TRADE_DATE` for an option expiry, all business days.
 _EXPIRY_OFFSETS: list[int] = [38, 98, 188]
 
+
 #: Strike offsets from the frozen rate, alternating above and below the market.
 _STRIKE_OFFSETS: list[float] = [0.02, -0.02, 0.05, -0.05]
 
@@ -273,43 +292,43 @@ class Ticket:
     option_type: str | None = None
     strike: float | None = None
     expiry: date | None = None
+    delivery: date | None = None
     premium: float | None = None
     premium_currency: str | None = None
     head: str | None = None
 
 
-def _add_months(value: date, months: int) -> date:
-    """Add calendar months, clamping a long day to the 28th.
-
-    Mirrors the rule-based parser's helper, so a familiar tenor reproduces exactly.
-    """
-    month_index = value.month - 1 + months
-    return date(
-        value.year + month_index // 12,
-        month_index % 12 + 1,
-        min(value.day, 28),
-    )
-
-
 def _tenor_date(tenor: tuple[int, str]) -> date:
-    """The settlement date a parsed tenor must resolve to."""
+    """The settlement date a parsed tenor must resolve to.
+
+    A tenor runs from the spot date, so ``1 week`` means a week after spot rather
+    than a week from today, which is how the market quotes a forward.
+    """
     count, unit = tenor
     if unit.startswith("week"):
-        return effective_trade_date(TRADE_DATE + timedelta(days=7 * count))
-    return effective_trade_date(_add_months(TRADE_DATE, count))
+        return effective_trade_date(SPOT_DATE + timedelta(days=7 * count))
+    return effective_trade_date(add_months(SPOT_DATE, count))
 
 
 def _shifted_variant(
-    capability: str, *, position: int, pair: str, tenor: tuple[int, str] | None
+    capability: str,
+    *,
+    instrument_type: str,
+    position: int,
+    pair: str,
+    tenor: tuple[int, str] | None,
 ) -> str:
     """The shifted spelling the item at ``position`` of its cell uses.
 
     Two tags need a rule rather than a rotation: a nickname tag is the nickname of
-    the ticket's own pair, and only a month tenor has a glued ``3s`` form.
+    the ticket's own pair, and only a month tenor has a glued ``3s`` form -- which
+    is a way of writing a *forward*, so an option's tenor only ever hyphenates.
     """
     if capability == "pair_nickname":
         return _NICKNAMES[pair]
     if capability == "tenor_form":
+        if instrument_type == OPTION:
+            return "hyphenated"
         attached = tenor is not None and tenor[1].startswith("month") and position % 2
         return "attached" if attached else "hyphenated"
     spellings = _SHIFTED_SPELLINGS[capability]
@@ -339,25 +358,39 @@ def _ticket(cell_index: int, k: int, split: str, rates: dict[str, float]) -> Tic
         notional *= 1_000
 
     tenor = None
-    settlement = None
     if capability == "tenor_form":
         tenor = TENORS[(cell_index + v) % len(TENORS)]
-        settlement = _tenor_date(tenor)
-    elif instrument_type == FORWARD:
-        settlement = TRADE_DATE + timedelta(
-            days=_SETTLEMENT_OFFSETS[(cell_index + v) % len(_SETTLEMENT_OFFSETS)]
+
+    settlement = None
+    if instrument_type == FORWARD:
+        # A stated tenor resolves off spot; a written-out date is taken as given.
+        settlement = (
+            _tenor_date(tenor)
+            if capability == "tenor_form"
+            else TRADE_DATE
+            + timedelta(
+                days=_SETTLEMENT_OFFSETS[(cell_index + v) % len(_SETTLEMENT_OFFSETS)]
+            )
         )
+    elif instrument_type == SPOT:
+        settlement = SPOT_DATE
 
     option_type = strike = expiry = premium = premium_currency = None
+    delivery = None
     if instrument_type == OPTION:
         option_type = ("CALL", "PUT")[(cell_index + v) % 2]
         strike = round(
             rates[pair] * (1 + _STRIKE_OFFSETS[(cell_index + v) % len(_STRIKE_OFFSETS)]),
             4,
         )
-        expiry = TRADE_DATE + timedelta(
-            days=_EXPIRY_OFFSETS[(cell_index + v) % len(_EXPIRY_OFFSETS)]
-        )
+        if tenor is not None:
+            # An option tenor expires that far past spot, like a forward's.
+            expiry = _tenor_date(tenor)
+        else:
+            expiry = TRADE_DATE + timedelta(
+                days=_EXPIRY_OFFSETS[(cell_index + v) % len(_EXPIRY_OFFSETS)]
+            )
+        delivery = option_delivery_date(expiry)
         premium = round(
             notional * _PREMIUM_FRACTIONS[(cell_index + v) % len(_PREMIUM_FRACTIONS)], 2
         )
@@ -378,12 +411,19 @@ def _ticket(cell_index: int, k: int, split: str, rates: dict[str, float]) -> Tic
         direction=("BUY", "SELL")[v % 2],
         notional=notional,
         counterparty=COUNTERPARTIES[(cell_index + v) % len(COUNTERPARTIES)],
-        variant=_shifted_variant(capability, position=position, pair=pair, tenor=tenor),
+        variant=_shifted_variant(
+            capability,
+            instrument_type=instrument_type,
+            position=position,
+            pair=pair,
+            tenor=tenor,
+        ),
         tenor=tenor,
         settlement=settlement,
         option_type=option_type,
         strike=strike,
         expiry=expiry,
+        delivery=delivery,
         premium=premium,
         premium_currency=premium_currency,
         head=head,
@@ -433,10 +473,24 @@ def _instrument_phrase(ticket: Ticket, shifted: bool) -> str:
             return f"{ticket.head} settling {_written_date(ticket.settlement)}"
         return f"{ticket.head} settling {ticket.settlement.isoformat()}"
 
-    head = (
-        f"{ticket.head}{ticket.option_type.lower()} strike of {ticket.strike:.4f} "
-        f"expiring {ticket.expiry.isoformat()}"
-    )
+    option = ticket.option_type.lower()
+    if ticket.capability == "tenor_form":
+        count, unit = ticket.tenor
+        if shifted:
+            head = (
+                f"{ticket.head}{count}-{unit.rstrip('s')} {option} "
+                f"strike of {ticket.strike:.4f}"
+            )
+        else:
+            head = (
+                f"{ticket.head}{option} strike of {ticket.strike:.4f} "
+                f"expiring in {count} {unit}"
+            )
+    else:
+        head = (
+            f"{ticket.head}{option} strike of {ticket.strike:.4f} "
+            f"expiring {ticket.expiry.isoformat()}"
+        )
     if ticket.capability == "option_terms" and shifted:
         if ticket.variant == "opt_strike_K":
             return (
@@ -492,7 +546,7 @@ def _golden(ticket: Ticket) -> dict:
             "option_type": ticket.option_type,
             "strike_rate": ticket.strike,
             "expiry_date": ticket.expiry.isoformat() if ticket.expiry else None,
-            "delivery_date": None,
+            "delivery_date": ticket.delivery.isoformat() if ticket.delivery else None,
             "premium_date": None,
             "premium": ticket.premium,
             "premium_currency": ticket.premium_currency,
@@ -624,6 +678,19 @@ _READ_OPTION = re.compile(
     r"expiring\s+(\d{4}-\d{2}-\d{2})",
     re.I,
 )
+#: An option that states its expiry as a tenor instead of a date. Two spellings,
+#: because the desk says it either trailing the terms or leading them, and both
+#: name the same four groups.
+_READ_OPTION_TENOR_TRAILING = re.compile(
+    r"\b(?:opt\s+)?(?P<kind>call|put)\s+(?:strike of\s+|K\s+)?(?P<strike>\S+)\s+"
+    r"expiring\s+in\s+(?P<count>\d+)\s+(?P<unit>week|weeks|month|months)",
+    re.I,
+)
+_READ_OPTION_TENOR_LEADING = re.compile(
+    r"\b(?:opt\s+)?(?P<count>\d+)-(?P<unit>week|month)\s+"
+    r"(?P<kind>call|put)\s+(?:strike of\s+|K\s+)?(?P<strike>\S+)",
+    re.I,
+)
 _READ_PREMIUM_STATED = re.compile(r"premium of\s+(\d[\d,]*(?:\.\d+)?)\s+([A-Z]{3})")
 _READ_PREMIUM_REORDERED = re.compile(r"premium\s+([A-Z]{3})\s+(\d[\d,]*(?:\.\d+)?)")
 
@@ -747,19 +814,45 @@ def _blank_instrument(instrument_type: str) -> dict:
     }
 
 
+def _read_tenor_expiry(text: str) -> re.Match | None:
+    """The tenor an option's expiry was stated as, if it was stated as one."""
+    for pattern in (_READ_OPTION_TENOR_TRAILING, _READ_OPTION_TENOR_LEADING):
+        match = pattern.search(text)
+        if match:
+            return match
+    return None
+
+
+def _option_instrument(
+    text: str, option_type: str, strike: str, expiry: date
+) -> dict:
+    """One option draft: the terms the text states, plus the dates it implies."""
+    premium, premium_currency = _read_premium(text)
+    instrument = _blank_instrument(OPTION)
+    instrument.update(
+        option_type=option_type.upper(),
+        strike_rate=float(strike),
+        expiry_date=expiry.isoformat(),
+        delivery_date=option_delivery_date(expiry).isoformat(),
+        premium=premium,
+        premium_currency=premium_currency,
+    )
+    return instrument
+
+
 def _read_instrument(text: str) -> tuple[str, dict]:
     match = _READ_OPTION.search(text)
     if match:
-        instrument = _blank_instrument(OPTION)
-        premium, premium_currency = _read_premium(text)
-        instrument.update(
-            option_type=match.group(1).upper(),
-            strike_rate=float(match.group(2)),
-            expiry_date=match.group(3),
-            premium=premium,
-            premium_currency=premium_currency,
+        return OPTION, _option_instrument(
+            text, match.group(1), match.group(2), date.fromisoformat(match.group(3))
         )
-        return OPTION, instrument
+
+    match = _read_tenor_expiry(text)
+    if match is not None:
+        tenor = (int(match.group("count")), match.group("unit"))
+        return OPTION, _option_instrument(
+            text, match.group("kind"), match.group("strike"), _tenor_date(tenor)
+        )
 
     settlement = _read_forward_settlement(text)
     if settlement is not None:
@@ -767,7 +860,9 @@ def _read_instrument(text: str) -> tuple[str, dict]:
         instrument["settlement_date"] = settlement.isoformat()
         return FORWARD, instrument
 
-    return SPOT, _blank_instrument(SPOT)
+    instrument = _blank_instrument(SPOT)
+    instrument["settlement_date"] = SPOT_DATE.isoformat()
+    return SPOT, instrument
 
 
 def read_ticket(text: str) -> dict:

@@ -27,9 +27,28 @@ def add_business_days(start: date, days: int) -> date:
     return current
 
 
+def add_months(value: date, months: int) -> date:
+    """Return ``value`` shifted by whole calendar months.
+
+    A day the target month is too short for clamps to the 28th, so a month tenor
+    resolves the same way wherever it is counted from.
+    """
+    month_index = value.month - 1 + months
+    return date(
+        value.year + month_index // 12,
+        month_index % 12 + 1,
+        min(value.day, 28),
+    )
+
+
 def spot_value_date(trade_date: date) -> date:
     """Standard spot value date: trade date + 2 business days."""
     return add_business_days(trade_date, 2)
+
+
+def option_delivery_date(expiry_date: date) -> date:
+    """Standard option delivery date: expiry + 2 business days."""
+    return add_business_days(expiry_date, 2)
 
 
 # Ambient rather than a parameter because every caller that needs the trade date

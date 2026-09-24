@@ -14,6 +14,7 @@ from app.schemas.trade import TradeCreate
 from app.services.business_calendar import (
     add_business_days,
     current_trade_date,
+    option_delivery_date,
     spot_value_date,
 )
 from app.services.market_data.frankfurter_client import get_rate
@@ -117,7 +118,10 @@ async def resolve_draft(
             ),
             expiry_date=inst.expiry_date,
             delivery_date=_fill_if_falsy(
-                inst.delivery_date, inst.expiry_date, "delivery_date", defaulted
+                inst.delivery_date,
+                option_delivery_date(inst.expiry_date),
+                "delivery_date",
+                defaulted,
             ),
             premium=_fill_if_none(inst.premium, 0.0, "premium", defaulted),
             premium_currency=_fill_if_falsy(

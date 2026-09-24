@@ -6,8 +6,9 @@ tests prove four independent things:
 
 * it is frozen -- the committed file is what the code builds, and an edit to it
   is detected rather than silently measured against;
-* it says what it means -- every rendered sentence reads back as its golden, so
-  a wrong score cannot be blamed on the labels;
+* it says what it means -- every rendered sentence reads back as its golden, and
+  the dates a convention supplies are stated rather than left null, so a wrong
+  score cannot be blamed on the labels;
 * the familiar arm is answerable -- the rule-based baseline reproduces it
   exactly, which makes the baseline the floor a model has to beat;
 * the shifted and invalid arms bite -- no shifted item is accidentally already
@@ -21,6 +22,7 @@ from __future__ import annotations
 import copy
 import json
 from collections import Counter
+from datetime import date
 
 import pytest
 
@@ -161,7 +163,7 @@ def test_a_hand_edited_file_is_rejected(payload, tmp_path):
 
 
 def test_split_sizes_and_item_ids_are_exact(payload):
-    assert payload["counts"] == {"A": 108, "B": 108, "C": 108, "D": 40}
+    assert payload["counts"] == {"A": 112, "B": 112, "C": 112, "D": 40}
 
     expected = [
         f"{split}-{index:03d}"
@@ -210,9 +212,10 @@ def test_pools_match_the_enums(snapshot):
 
 
 def test_cells_and_tags_cover_the_design(payload):
-    assert len(corpus.CELLS) == 27
-    assert len(set(corpus.CELLS)) == 27
+    assert len(corpus.CELLS) == 28
+    assert len(set(corpus.CELLS)) == 28
     assert len(corpus.CAPABILITIES) == 11
+    assert len(set(corpus.CAPABILITIES)) == 11, "a tag with two cells is still one tag"
     assert set(corpus.CAPABILITIES) == {capability for capability, _ in corpus.CELLS}
     assert [capability for capability, _ in corpus.CELLS[:3]] == [
         "tenor_form",
@@ -328,7 +331,7 @@ def test_familiar_and_shifted_pools_share_no_ticket(payload):
 
     ``A`` and ``C`` have to be disjoint tickets, otherwise the familiar arm
     contains the shifted arm's answer and the comparison is meaningless. ``B``
-    and ``C`` are deliberately the same 108 tickets said two ways, so for them
+    and ``C`` are deliberately the same 112 tickets said two ways, so for them
     the overlap must be exactly the pairs, item by item.
     """
     a = {_key(item["golden"]): item["item_id"] for item in corpus.items_of(payload, "A")}
@@ -356,6 +359,20 @@ def test_every_rendered_sentence_reads_back_as_its_golden(payload):
         if item["golden"] is None:
             continue
         assert corpus.read_ticket(item["text"]) == item["golden"], item["item_id"]
+
+
+def test_an_option_states_a_delivery_and_no_settlement(payload):
+    """The option convention: a delivery two business days past expiry, no settlement."""
+    for item in payload["items"]:
+        if item["instrument_type"] != "OPTION" or item["golden"] is None:
+            continue
+        instrument = item["golden"]["instrument"]
+        expiry = date.fromisoformat(instrument["expiry_date"])
+        assert instrument["settlement_date"] is None
+        assert (
+            instrument["delivery_date"]
+            == business_calendar.add_business_days(expiry, 2).isoformat()
+        )
 
 
 def test_goldens_are_exact_drafts(payload):

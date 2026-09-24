@@ -9,9 +9,10 @@ import re
 from datetime import date
 
 from app.services.business_calendar import (
-    add_business_days,
+    add_months,
     current_trade_date,
     effective_trade_date,
+    option_delivery_date,
     spot_value_date,
 )
 from app.services.market_data.pairs import SUPPORTED_PAIRS
@@ -84,6 +85,7 @@ _NOTIONAL_WORD = re.compile(
 _BARE_LARGE = re.compile(r"\b(\d[\d,]{4,}(?:\.\d+)?)\b")  # >= 10,000
 _TENOR = re.compile(r"\bin\s+(\d+)\s+(week|weeks|month|months)\b", re.I)
 
+
 _NUMBER_WORDS = {
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
@@ -125,22 +127,20 @@ def _date_near(text: str, keyword: str) -> date | None:
     return None
 
 
-def _add_months(d: date, months: int) -> date:
-    month_index = d.month - 1 + months
-    year = d.year + month_index // 12
-    month = month_index % 12 + 1
-    return date(year, month, min(d.day, 28))
-
-
 def _tenor_settlement(text: str) -> date | None:
+    """The settlement a stated tenor resolves to.
+
+    A tenor counts from the spot date, not from today, which is how a forward is
+    quoted: three months lands three months after spot.
+    """
     m = _TENOR.search(text)
     if not m:
         return None
     count = int(m.group(1))
     unit = m.group(2).lower()
-    base = current_trade_date()
+    base = spot_value_date(current_trade_date())
     if unit.startswith("month"):
-        return effective_trade_date(_add_months(base, count))
+        return effective_trade_date(add_months(base, count))
     return effective_trade_date(base + __import__("datetime").timedelta(days=7 * count))
 
 
@@ -181,7 +181,11 @@ def parse_rule_based(text: str) -> dict:
         premium_m = _PREMIUM.search(text)
         premium = float(premium_m.group(1)) if premium_m else None
         premium_currency = premium_m.group(2) if premium_m and premium_m.group(2) else currency_2
-        expiry = _date_near(lower, r"expir(?:e|ing|y|es)?") or _DATE.search(text)
+        expiry = (
+            _date_near(lower, r"expir(?:e|ing|y|es)?")
+            or _tenor_settlement(text)
+            or _DATE.search(text)
+        )
         expiry_date = expiry if isinstance(expiry, date) else None
         if expiry_date is None:
             raise ParseError("option is missing an expiry date")
@@ -197,7 +201,7 @@ def parse_rule_based(text: str) -> dict:
             "option_type": option_type,
             "strike_rate": strike,
             "expiry_date": expiry_date.isoformat(),
-            "delivery_date": None,
+            "delivery_date": option_delivery_date(expiry_date).isoformat(),
             "premium_date": None,
             "premium": premium,
             "premium_currency": premium_currency,
@@ -216,7 +220,7 @@ def parse_rule_based(text: str) -> dict:
             settlement = (
                 explicit_settlement
                 or tenor_settlement
-                or effective_trade_date(_add_months(current_trade_date(), 1))
+                or effective_trade_date(add_months(current_trade_date(), 1))
             )
         else:
             instrument_type = "SPOT"

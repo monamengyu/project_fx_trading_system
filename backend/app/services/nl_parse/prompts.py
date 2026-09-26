@@ -1,6 +1,8 @@
 """Engineered prompts for converting natural language into a structured trade."""
 
+import json
 from datetime import date
+from hashlib import sha256
 
 from app.services.business_calendar import (
     add_months,
@@ -200,17 +202,30 @@ def build_system_prompt(today: date | None = None) -> str:
     )
 
 
-def build_messages(user_text: str) -> list[dict]:
-    """system + few-shot demonstrations + the user instruction."""
+def instruction_messages(shots: int | None = None) -> list[dict]:
+    """Everything sent before the text itself: the system turn and the demonstrations.
+
+    ``shots`` caps how many demonstrations go out — ``None`` sends all of them, ``0``
+    sends none. Kept apart from :func:`build_messages` so a run can digest the
+    instructions without depending on the text being parsed.
+    """
     messages = [{"role": "system", "content": build_system_prompt()}]
-    for example_text, example_json in _few_shots(current_trade_date()):
+    for example_text, example_json in _few_shots(current_trade_date())[:shots]:
         messages.append({"role": "user", "content": example_text})
         messages.append({"role": "assistant", "content": _dump_json(example_json)})
-    messages.append({"role": "user", "content": user_text})
     return messages
 
 
-def _dump_json(obj: dict) -> str:
-    import json
+def instruction_digest(shots: int | None = None) -> str:
+    """A digest of the instructions, independent of the text being parsed."""
+    blob = json.dumps(instruction_messages(shots), sort_keys=True)
+    return sha256(blob.encode("utf-8")).hexdigest()
 
+
+def build_messages(user_text: str, shots: int | None = None) -> list[dict]:
+    """The instructions, then the text to parse."""
+    return [*instruction_messages(shots), {"role": "user", "content": user_text}]
+
+
+def _dump_json(obj: dict) -> str:
     return json.dumps(obj)

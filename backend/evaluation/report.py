@@ -435,6 +435,17 @@ def _counts_lines(counts: Counter, *, empty: str) -> list[str]:
     ]
 
 
+def _shots_line(header: dict) -> str:
+    """How many worked examples the run was shown.
+
+    ``None`` means the whole set. A run recorded before the field existed says so
+    rather than being read as zero.
+    """
+    if "shots" not in header:
+        return "unrecorded"
+    return "all" if header["shots"] is None else str(header["shots"])
+
+
 def _header_lines(header: dict, path: Path | None) -> list[str]:
     git_sha = header.get("git_sha")
     if git_sha is None:
@@ -458,6 +469,10 @@ def _header_lines(header: dict, path: Path | None) -> list[str]:
         (
             "prompt",
             f"sha256 {(header.get('system_prompt_sha256') or '-')[:12]}",
+        ),
+        (
+            "shots",
+            _shots_line(header),
         ),
         ("started", str(header.get("started_at"))),
         (

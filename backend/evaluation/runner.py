@@ -53,7 +53,7 @@ from app.services import business_calendar
 from app.services.nl_parse.baseline import ParseError
 from app.services.nl_parse.models import ModelInfo, get_model_info
 from app.services.nl_parse.parser import parse_trade
-from app.services.nl_parse.prompts import build_system_prompt
+from app.services.nl_parse.prompts import build_system_prompt, instruction_digest
 from evaluation import corpus, scoring
 from evaluation.frozen_rates import FrozenRateProvider
 
@@ -85,11 +85,16 @@ async def run_model(
     limit: int | None = None,
     item_timeout_s: float = DEFAULT_ITEM_TIMEOUT_S,
     notes: str | None = None,
+    shots: int | None = None,
 ) -> list[dict]:
     """Run ``model_id`` over ``payload`` and return the records, header first.
 
     ``limit`` caps the items taken per split, for a smoke test or a spend cap; the
     header records it, so a truncated run says so rather than looking small.
+
+    ``shots`` caps how many worked examples the model is shown; ``None`` sends the
+    whole set. It is recorded in the header, so two runs that were shown different
+    instructions are told apart by the evidence rather than by their run ids.
     """
     provider = snapshot or FrozenRateProvider.from_file()
     info = get_model_info(model_id)
@@ -100,10 +105,14 @@ async def run_model(
         items.extend(selected if limit is None else selected[:limit])
 
     with business_calendar.override_trade_date(corpus.TRADE_DATE):
-        records = [_header(payload, info, run_id, wanted, len(items), limit, item_timeout_s, notes)]
+        records = [
+            _header(
+                payload, info, run_id, wanted, len(items), limit, item_timeout_s, notes, shots
+            )
+        ]
         for item in items:
             records.append(
-                await _attempt(item, model_id, provider, run_id, item_timeout_s)
+                await _attempt(item, model_id, provider, run_id, item_timeout_s, shots)
             )
     return records
 
@@ -113,6 +122,7 @@ async def _parse_with_deadline(
     model_id: str,
     provider: FrozenRateProvider,
     item_timeout_s: float,
+    shots: int | None,
 ):
     """Parse one ticket, abandoning the call if the deadline passes.
 
@@ -122,7 +132,7 @@ async def _parse_with_deadline(
     escapes that way cannot be caught and recovered from.
     """
     call = asyncio.ensure_future(
-        parse_trade(text, model_id, rate_provider=provider)
+        parse_trade(text, model_id, rate_provider=provider, shots=shots)
     )
     done, _ = await asyncio.wait({call}, timeout=item_timeout_s)
     if not done:
@@ -139,6 +149,7 @@ async def _attempt(
     provider: FrozenRateProvider,
     run_id: str,
     item_timeout_s: float,
+    shots: int | None,
 ) -> dict:
     """Call the parser once and record everything it did, including how it failed.
 
@@ -156,7 +167,7 @@ async def _attempt(
 
     try:
         result = await _parse_with_deadline(
-            item["text"], model_id, provider, item_timeout_s
+            item["text"], model_id, provider, item_timeout_s, shots
         )
         draft = result.draft.model_dump(mode="json")
         defaulted = list(result.defaulted_fields)
@@ -217,11 +228,12 @@ def _header(
     limit: int | None,
     item_timeout_s: float,
     notes: str | None,
+    shots: int | None = None,
 ) -> dict:
     """The provenance of a run: what was measured, by what, and from which commit.
 
-    Called with the trade date already pinned, so the prompt digest below is the
-    prompt the run actually sent.
+    Called with the trade date already pinned, so the prompt digests below are the
+    ones the run actually sent.
     """
     git_sha, git_dirty = _git_state()
     return {
@@ -237,6 +249,9 @@ def _header(
         "system_prompt_sha256": sha256(
             build_system_prompt().encode("utf-8")
         ).hexdigest(),
+        # Covers the demonstrations as well, which the system-prompt digest cannot see.
+        "instruction_sha256": instruction_digest(shots),
+        "shots": shots,
         "splits": list(splits),
         "item_limit": limit,
         "item_count": item_count,
@@ -364,6 +379,12 @@ def main(argv: list[str] | None = None) -> int:
         help="which splits to run (default: all)",
     )
     parser.add_argument("--limit", type=int, default=None, help="items per split")
+    parser.add_argument(
+        "--shots",
+        type=int,
+        default=None,
+        help="how many worked examples to show (default: all, 0 for none)",
+    )
     parser.add_argument("--timeout", type=float, default=DEFAULT_ITEM_TIMEOUT_S)
     parser.add_argument("--output", default=None, help="defaults to results/runs.jsonl")
     parser.add_argument("--notes", default=None)
@@ -379,6 +400,7 @@ def main(argv: list[str] | None = None) -> int:
             limit=args.limit,
             item_timeout_s=args.timeout,
             notes=args.notes,
+            shots=args.shots,
         )
     )
     written = write_records(records, args.output)

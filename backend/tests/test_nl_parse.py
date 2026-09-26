@@ -500,6 +500,21 @@ async def test_a_declined_instruction_is_a_refusal_not_a_retry():
     assert "declined" in str(caught.value)
 
 
+def test_shots_caps_the_worked_examples_but_defaults_to_all():
+    """``shots`` is a property of the instructions, so the default must not move."""
+    from app.services.nl_parse.prompts import _few_shots, build_messages
+
+    total = len(_few_shots(PINNED_DAY))
+    assert len(build_messages("Buy EURUSD spot")) == 2 + 2 * total
+    assert len(build_messages("Buy EURUSD spot", None)) == 2 + 2 * total
+    assert len(build_messages("Buy EURUSD spot", 0)) == 2
+    assert len(build_messages("Buy EURUSD spot", 1)) == 4
+
+    bare = build_messages("Buy EURUSD spot", 0)
+    assert bare[0]["role"] == "system"
+    assert bare[-1] == {"role": "user", "content": "Buy EURUSD spot"}
+
+
 async def test_baseline_client_rejects_a_conversation_without_a_user_turn():
     from app.services.nl_parse.clients import BaselineClient
 

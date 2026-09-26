@@ -204,18 +204,22 @@ async def parse_trade(
     model_id: str | None = None,
     *,
     rate_provider: RateProvider | None = None,
+    shots: int | None = None,
 ) -> ParseResult:
     """Parse ``text`` with the selected model and return a validated trade.
 
     ``rate_provider`` is forwarded to ``resolve_draft`` so a run can replay a
     frozen market; see that function for the rationale. Pin the trade date with
     ``business_calendar.override_trade_date``.
+
+    ``shots`` caps how many worked examples the model is shown — ``None`` sends the
+    whole set. It is a property of the model's instructions, not of the text.
     """
     model_id = model_id or settings.nl_parse_default_model
     info = get_model_info(model_id)
     client = get_client(info)
 
-    messages = build_messages(text)
+    messages = build_messages(text, shots)
     last_error: Exception | None = None
     usage: dict | None = None
     served_model: str | None = None

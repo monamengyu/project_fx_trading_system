@@ -26,7 +26,7 @@ import pytest
 from app.services import business_calendar
 from app.services.nl_parse.baseline import ParseError
 from app.services.nl_parse.prompts import build_system_prompt
-from evaluation import corpus, runner, scoring
+from evaluation import corpus, report, runner, scoring
 from evaluation.frozen_rates import MissingFrozenRate
 
 #: The field names a scored record has to carry, whatever the outcome was.
@@ -201,6 +201,34 @@ def test_the_header_digests_the_prompt_the_run_actually_sent(payload):
     with business_calendar.override_trade_date(corpus.TRADE_DATE):
         expected = sha256(build_system_prompt().encode("utf-8")).hexdigest()
     assert records[0]["system_prompt_sha256"] == expected
+
+
+def test_a_run_records_how_many_examples_it_was_shown(payload):
+    """The system-prompt digest cannot see the demonstrations, so the header does.
+
+    Dropping every worked example leaves the system-prompt digest identical, which is
+    why the demonstration count needs a field of its own: without it, a run with no
+    examples would look like the same measurement as one with six.
+    """
+    full = asyncio.run(
+        runner.run_model(payload, "rule-based", run_id="full", splits=("A",), limit=1)
+    )
+    bare = asyncio.run(
+        runner.run_model(
+            payload, "rule-based", run_id="bare", splits=("A",), limit=1, shots=0
+        )
+    )
+    assert full[0]["shots"] is None
+    assert bare[0]["shots"] == 0
+    assert full[0]["system_prompt_sha256"] == bare[0]["system_prompt_sha256"]
+    assert full[0]["instruction_sha256"] != bare[0]["instruction_sha256"]
+
+    # The two conditions are comparable on every other field, so a difference taken
+    # between them is the effect of the demonstrations and nothing else.
+    assert report.compare_headers(full[0], bare[0]) == []
+    assert report._shots_line(full[0]) == "all"
+    assert report._shots_line(bare[0]) == "0"
+    assert report._shots_line({}) == "unrecorded"
 
 
 # --------------------------------------------------------------------------- #

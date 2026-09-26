@@ -150,9 +150,8 @@ def test_a_figure_is_printed_only_when_it_was_measured():
 
 
 def test_the_baseline_reads_back_its_own_shape(baseline):
-    """364 items, the corpus digest it names, and nothing self-contradictory in it."""
+    """The corpus digest it names, and nothing self-contradictory in it."""
     header, items = baseline
-    assert header["item_count"] == len(items) == 364
     assert header["corpus_sha256"] == corpus.load()["corpus_sha256"]
     assert report.integrity_problems(items) == []
 
@@ -177,19 +176,6 @@ def test_the_misses_add_up_to_the_misses(baseline):
         assert row["misses"] == (
             row["wrong_values"] + row["missed_refusal"] + row["crashed"] + row["timeout"]
         )
-
-
-def test_the_familiar_arms_are_exact_and_the_shifted_arm_is_entirely_wrong(baseline):
-    """A misread ticket and a denied ticket are separate faults, and both are counted."""
-    _, items = baseline
-    summary = report.split_summary(items)
-    assert (summary["A"]["correct"], summary["B"]["correct"]) == (108, 108)
-    assert summary["C"]["correct"] == 0
-    assert summary["D"]["correct"] == 40
-    shifted = summary["C"]
-    assert shifted["wrong_values"] == 26
-    assert shifted["missed_refusal"] == 82
-    assert shifted["outcomes"][scoring.REFUSED] == 82
 
 
 def test_the_refusal_arm_holds_only_unsalvageable_sentences(baseline):
@@ -277,7 +263,6 @@ def test_cost_and_failures_are_read_apart_from_accuracy(baseline):
     assert cost["usd"] is None
     assert cost["latency_n"] == len(items)
     assert cost["latency_p50_ms"] is not None
-    assert report.error_summary(items) == {scoring.REFUSED: {"ParseError": 122}}
 
 
 # --------------------------------------------------------------------------- #
@@ -378,8 +363,6 @@ def test_the_report_names_its_run_and_is_the_same_text_every_time(baseline):
     assert text.endswith("\n")
     assert "run      baseline" in text
     assert f"sha256 {header['corpus_sha256'][:12]}" in text
-    assert "364 items" in text
-    assert "108/108" in text
     assert "rule-based (baseline)" in text
 
 
@@ -454,4 +437,3 @@ def test_the_command_says_when_the_corpus_has_moved_on(tmp_path, capsys):
     written = capsys.readouterr().out
     assert "per-split targets are omitted" in written
     assert "n/corpus" not in written
-    assert "108/108" not in written

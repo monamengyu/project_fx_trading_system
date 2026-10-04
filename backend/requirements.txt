@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-sqlalchemy[asyncio]>=2.0
+sqlalchemy[asyncio]>=2.0,<2.1
 asyncpg
 alembic
 pydantic

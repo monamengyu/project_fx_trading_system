@@ -1,6 +1,6 @@
 # project_fx_trading_system
 
-Foreign Exchange Trading System Supporting Natural Language Trade Entry Built in Python.
+Foreign Exchange Trading System Supporting Natural Language Trade Entry.
 
 A full-stack FX trading desk application: live market rates, position summaries
 with option greeks and mark-to-market P&L, a trade blotter covering the full
@@ -15,6 +15,11 @@ trade entry that converts a plain-English instruction into a validated trade.
 - [API overview](#api-overview)
 - [Requirements](#requirements)
 - [Quick start (Docker)](#quick-start-docker)
+  - [Services and ports](#services-and-ports)
+  - [First run](#first-run)
+  - [Common commands](#common-commands)
+  - [What the images are](#what-the-images-are)
+  - [Docker troubleshooting](#docker-troubleshooting)
 - [Local development](#local-development)
   - [Backend](#backend)
   - [Frontend](#frontend)
@@ -111,6 +116,21 @@ Full request/response contracts are in [docs/api_contracts.md](docs/api_contract
 
 ## Quick start (Docker)
 
+### Services and ports
+
+| Service    | Container     | Host port | Notes                                                    |
+| ---------- | ------------- | --------- | -------------------------------------------------------- |
+| Backend    | `fx_backend`  | 8000      | FastAPI on Uvicorn; interactive docs at `/docs`           |
+| Frontend   | `fx_frontend` | 3000      | Vite dev server                                           |
+| PostgreSQL | `fx_postgres` | 5432      | data persists in the `pgdata` volume                      |
+
+All three restart unless stopped, and the backend waits for the database health
+check before it starts. The backend container is itself health-checked on
+`/health`, so `docker compose ps` reports the real state rather than just
+"running".
+
+### First run
+
 From the repository root:
 
 ```bash
@@ -118,15 +138,74 @@ cp .env.example .env    # set POSTGRES_* and, if used, OPENROUTER_API_KEY
 docker compose up --build
 ```
 
-- Backend: <http://localhost:8000> (interactive docs at `/docs`)
-- Frontend: <http://localhost:3000>
-
-Migrations are **not** applied automatically, so run them once against the
-running stack:
+The first build takes a few minutes; later starts take seconds. Then apply the
+schema once:
 
 ```bash
 docker compose exec backend python -m alembic upgrade head
 ```
+
+Migrations are **not** applied automatically, so this step is required after the
+first start and after `docker compose down -v`. Without it the API starts but
+every trade and position request fails, because the tables do not exist.
+
+Confirm both sides are up before opening the dashboard:
+
+```bash
+curl localhost:8000/health      # the API process
+curl localhost:8000/health/db   # the API reaching the database
+```
+
+The dashboard is at <http://localhost:3000>. The browser calls the API on
+`localhost:8000` directly (`VITE_API_URL` in `docker-compose.yml`), so no proxy
+sits between them.
+
+### Common commands
+
+| Task                                   | Command                                           |
+| -------------------------------------- | ------------------------------------------------- |
+| Follow the backend logs                | `docker compose logs -f backend`                  |
+| Rebuild after a dependency change      | `docker compose up --build`                       |
+| Stop, keeping the database contents    | `docker compose down`                             |
+| Stop and delete the database           | `docker compose down -v`                          |
+| Shell inside the backend               | `docker compose exec backend sh`                  |
+
+Dependency changes need the rebuild: both images install their dependencies at
+build time, and the source directories are mounted over the images at run time.
+
+Run the test suites on the host rather than in the container. The backend image
+does not install `pytest`, only `pytest-asyncio`, which the application itself
+needs; and the suite empties the trade book before every test, so running it
+against the containerised database would delete the trades the dashboard is
+showing. See [Testing](#testing) for the local commands.
+
+### What the images are
+
+Both are development images, not release images. The backend image installs
+`requirements.txt` and runs Uvicorn with `--reload` over the bind-mounted
+`backend/` directory. The frontend image installs from the lockfile and runs the
+Vite dev server over the bind-mounted `frontend/`, keeping `node_modules` inside
+the container so the host tree is left alone. Source edits are therefore picked
+up without a rebuild.
+
+Two consequences are worth stating plainly, because "deploy with Docker" can
+mean more than this stack does. There is no built frontend bundle served by a
+static server, and no reverse proxy, TLS or secret management: the stack is
+intended for local demonstration and for the environment validation reported in
+the write-up, not for an internet-facing deployment. The database port is also
+published to the host, which is convenient for inspection with `psql` and should
+be closed for anything else.
+
+### Docker troubleshooting
+
+| Symptom | Cause and fix |
+| ------- | ------------- |
+| `alembic upgrade head` fails with `ModuleNotFoundError: No module named 'psycopg'` | `requirements.txt` pins SQLAlchemy below 2.1 on purpose: a plain `postgresql://` URL resolves to the psycopg v3 driver from 2.1 onward, while the image installs `psycopg2-binary`. Rebuild after changing dependencies, and do not lift the pin without switching the URL scheme to `postgresql+psycopg2://`. |
+| Every trade or position request returns 500 | The schema was never applied. Run the migration command above against the running stack. |
+| Local models fail with a connection error | Ollama runs on the host, not in the stack. `docker-compose.yml` points the backend at `http://host.docker.internal:11434/v1` and adds `extra_hosts: host-gateway` for this reason. On Windows, Ollama must be running inside WSL; if it listens on another port, set `OLLAMA_BASE_URL` in `docker-compose.yml`. |
+| Hosted models are missing from the model dropdown | `OPENROUTER_API_KEY` is unset in the root `.env`. `GET /nl-parse/models` lists them only when a key is present. |
+| `port is already allocated` | Another process holds 3000, 8000 or 5432. Change the host side of the mapping in `docker-compose.yml`, for example `"8001:8000"`, and use the new port in the browser. |
+| The dashboard loads but requests are blocked by CORS | The origin the browser uses must appear in `CORS_ORIGINS`, which defaults to `http://localhost:3000` and `http://127.0.0.1:3000`. Which file wins is worth knowing: the container reads `backend/.env` through the mount, but environment variables set in `docker-compose.yml` take precedence, so `DATABASE_URL` comes from Compose while `CORS_ORIGINS` comes from `backend/.env` or its default. |
 
 ## Local development
 
